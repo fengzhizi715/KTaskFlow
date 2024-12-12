@@ -1,0 +1,31 @@
+apply plugin: 'java'
+apply plugin: 'application'
+apply plugin: 'kotlin'
+
+group 'com.safframework.statemachine'
+version '1.0-SNAPSHOT'
+
+sourceCompatibility = 1.8
+
+repositories {
+    jcenter()
+    mavenCentral()
+    maven { url "https://jitpack.io" }
+}
+
+dependencies {
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1-Beta")
+}
+
+buildscript {
+    ext.kotlin_version = '1.9.21'
+
+    repositories {
+        jcenter()
+        mavenCentral()
+        maven { url "https://jitpack.io" }
+    }
+    dependencies {
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
+}
