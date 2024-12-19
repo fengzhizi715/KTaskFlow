@@ -10,12 +10,10 @@ import kotlinx.coroutines.*
  * @date: 2024/12/10 15:30
  * @version: V1.0 <描述当前版本功能>
  */
-class TaskScheduler(private val dag: DAG) {
-
-    private val jobScope = CoroutineScope(Dispatchers.Default)
+class TaskScheduler(private val dag: DAG, private val jobScope: CoroutineScope = CoroutineScope(Dispatchers.Default)) {
 
     // 执行任务
-    suspend fun execute(task: Task) {
+    private suspend fun execute(task: Task) {
         try {
             withTimeout(task.timeout) {
                 task.status = TaskStatus.IN_PROGRESS
