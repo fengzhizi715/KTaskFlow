@@ -73,7 +73,7 @@ class TaskScheduler(private val dag: DAG, private val jobScope: CoroutineScope =
                                 readyTasks.add(dependentTask)
                             }
                         }
-                    } else if (task.weakDependencies.size > 0){
+                    } else {
 
                         // 检查依赖是否完成
                         val dependencyCompleted = task.weakDependencies.any { it.status == TaskStatus.COMPLETED }

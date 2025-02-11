@@ -14,6 +14,9 @@ fun dag(init: DAG.() -> Unit): DAG {
     return dag
 }
 
+/**
+ * 生成 dot 文件，使用 Graphviz 打开
+ */
 fun generateDotFile(dag: DAG): String {
     val sb = StringBuilder()
     sb.append("digraph G {\n")
