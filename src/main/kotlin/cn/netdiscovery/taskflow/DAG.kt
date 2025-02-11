@@ -13,6 +13,9 @@ class DAG {
 
     fun task(id: String, taskName: String, taskAction: suspend () -> Unit): Task {
         val task = Task(id, taskName, taskAction)
+        if (tasks.containsKey(id)) {
+            throw IllegalArgumentException("Task with id $id already exists.")
+        }
         tasks[id] = task
         return task
     }

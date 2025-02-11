@@ -22,11 +22,12 @@ class Task(
     val taskAction: suspend () -> Unit
 ) {
     var status: TaskStatus = TaskStatus.NOT_STARTED
-    var retryCount: Int = 0
+    var currentRetryCount: Int = 0
+    var retries: Int = 3 // 默认重试次数
     var successCallback: (() -> Unit)? = null
     var failureCallback: (() -> Unit)? = null
     var timeout: Long = 5000 // 默认超时时间
-    var retries: Int = 3 // 默认重试次数
+    var retryDelay: Long = 1000 // 重试延迟时间
 
     // 任务的强依赖
     val dependencies = mutableListOf<Task>()

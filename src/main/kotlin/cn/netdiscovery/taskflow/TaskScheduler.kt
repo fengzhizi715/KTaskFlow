@@ -1,6 +1,8 @@
 package cn.netdiscovery.taskflow
 
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  *
@@ -11,6 +13,9 @@ import kotlinx.coroutines.*
  * @version: V1.0 <描述当前版本功能>
  */
 class TaskScheduler(private val dag: DAG, private val jobScope: CoroutineScope = CoroutineScope(Dispatchers.Default)) {
+
+    // 并发控制
+    private val mutex = Mutex()
 
     // 执行任务
     private suspend fun execute(task: Task) {
@@ -34,17 +39,21 @@ class TaskScheduler(private val dag: DAG, private val jobScope: CoroutineScope =
 
     // 重试机制
     private suspend fun retry(task: Task) {
-        if (task.retryCount < task.retries) {
-            task.retryCount++
-            println("Retrying task: ${task.id}, attempt: ${task.retryCount}")
+        if (task.currentRetryCount < task.retries) {
+            task.currentRetryCount++
+            println("Retrying task: ${task.id}, attempt: ${task.currentRetryCount}")
+            delay(task.retryDelay) // 可配置的重试间隔
             execute(task)
+        } else {
+            println("Task ${task.id} failed after ${task.retries} retries.")
         }
     }
 
     // 启动所有准备好的任务
     suspend fun start() {
-        // Step 1: 初始化任务的入度，只考虑强依赖，不考虑弱依赖
         val readyTasks = mutableListOf<Task>()
+
+        // 初始化任务的入度，只考虑强依赖，不考虑弱依赖
         for (task in dag.tasks.values) {
             // 初始化入度，只计算强依赖（通过 dependsOn 添加的任务）
             task.indegree = task.dependencies.size  // 只计算强依赖
@@ -53,36 +62,62 @@ class TaskScheduler(private val dag: DAG, private val jobScope: CoroutineScope =
             }
         }
 
-        // Step 2: 持续调度任务，直到所有任务都完成
+        // 持续调度任务，直到所有任务都完成
         while (readyTasks.isNotEmpty()) {
             val tasksToExecute = readyTasks.toList()
             readyTasks.clear()
 
+//            val jobs = tasksToExecute.map { task ->
+//                jobScope.async {
+//                    println("task id = ${task.id}")
+//
+//                    // 执行任务
+//                    if (task.weakDependencies.size==0) {
+//                        execute(task)
+//
+//                        // 完成当前任务后，更新依赖关系
+//                        for (dependentTask in task.dependents) {
+//                            dependentTask.indegree--
+//                            if (dependentTask.indegree == 0) {
+//                                readyTasks.add(dependentTask)
+//                            }
+//                        }
+//                    } else {
+//
+//                        // 检查依赖是否完成
+//                        val dependencyCompleted = task.weakDependencies.any { it.status == TaskStatus.COMPLETED }
+//
+//                        println("dependencyCompleted = $dependencyCompleted")
+//
+//                        if (dependencyCompleted) {
+//                            execute(task)
+//                        } else {
+//                            readyTasks.add(task)
+//                        }
+//                    }
+//                }
+//            }
+
+            // 执行当前任务并更新依赖
             val jobs = tasksToExecute.map { task ->
                 jobScope.async {
-                    println("task id = ${task.id}")
+                    println("Executing task: ${task.id}")
 
-                    // 执行任务
-                    if (task.weakDependencies.size==0) {
+                    if (task.weakDependencies.isEmpty() || task.weakDependencies.any { it.status == TaskStatus.COMPLETED }) {
                         execute(task)
 
                         // 完成当前任务后，更新依赖关系
-                        for (dependentTask in task.dependents) {
-                            dependentTask.indegree--
-                            if (dependentTask.indegree == 0) {
-                                readyTasks.add(dependentTask)
+                        mutex.withLock {
+                            for (dependentTask in task.dependents) {
+                                dependentTask.indegree--
+                                if (dependentTask.indegree == 0) {
+                                    readyTasks.add(dependentTask)
+                                }
                             }
                         }
                     } else {
-
-                        // 检查依赖是否完成
-                        val dependencyCompleted = task.weakDependencies.any { it.status == TaskStatus.COMPLETED }
-
-                        println("dependencyCompleted = $dependencyCompleted")
-
-                        if (dependencyCompleted) {
-                            execute(task)
-                        } else {
+                        // 如果有弱依赖未完成，将任务推迟
+                        mutex.withLock {
                             readyTasks.add(task)
                         }
                     }

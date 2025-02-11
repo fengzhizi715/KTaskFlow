@@ -28,16 +28,23 @@ fun main() = runBlocking {
             println("${System.currentTimeMillis()}, Task 4 start!")
             Thread.sleep(2000)
         }
+        val task5 = task("5", "Task 5") {
+            println("${System.currentTimeMillis()}, Task 5 start!")
+            Thread.sleep(1000)
+        }
 
         task3.dependsOn(task1,task2)
 
         // 弱依赖
         task4.weakDependsOn(task1, task2)
 
+        task5.dependsOn(task3,task4)
+
         task1.successCallback = { println("${System.currentTimeMillis()}, Task 1 completed!") }
         task2.successCallback = { println("${System.currentTimeMillis()}, Task 2 completed!") }
         task3.successCallback = { println("${System.currentTimeMillis()}, Task 3 completed!") }
         task4.successCallback = { println("${System.currentTimeMillis()}, Task 4 completed!") }
+        task5.successCallback = { println("${System.currentTimeMillis()}, Task 5 completed!") }
     }
 
     println(generateDotFile(dag))
