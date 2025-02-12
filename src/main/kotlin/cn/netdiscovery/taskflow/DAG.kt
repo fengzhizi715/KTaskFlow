@@ -11,8 +11,8 @@ package cn.netdiscovery.taskflow
 class DAG {
     val tasks = mutableMapOf<String, Task>()
 
-    fun task(id: String, taskName: String, priority: Int = 0, taskAction: suspend () -> Unit): Task {
-        val task = Task(id, taskName, priority, taskAction)
+    fun task(id: String, taskName: String, priority: Int = 0, type: TaskType = TaskType.IO, taskAction: suspend () -> Unit): Task {
+        val task = Task(id, taskName, priority, type, taskAction)
         if (tasks.containsKey(id)) {
             throw IllegalArgumentException("Task with id $id already exists.")
         }

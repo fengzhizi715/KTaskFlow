@@ -3,7 +3,7 @@ package cn.netdiscovery.taskflow
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import java.util.concurrent.PriorityBlockingQueue
+import java.util.*
 
 /**
  *
@@ -13,10 +13,19 @@ import java.util.concurrent.PriorityBlockingQueue
  * @date: 2024/12/10 15:30
  * @version: V1.0 <描述当前版本功能>
  */
-class TaskScheduler(private val dag: DAG, private val jobScope: CoroutineScope = CoroutineScope(Dispatchers.Default)) {
+class TaskScheduler(private val dag: DAG) {
 
     // 并发控制
     private val mutex = Mutex()
+
+    // I/O 密集型任务的线程池
+    private val ioTaskPool = CoroutineScope(Dispatchers.IO)
+
+    // CPU 密集型任务的线程池
+    private val cpuTaskPool = CoroutineScope(Dispatchers.Default)
+
+    // 全局任务队列
+    private val readyTasks = mutableListOf<Task>()
 
     // 执行任务
     private suspend fun execute(task: Task) {
@@ -52,11 +61,11 @@ class TaskScheduler(private val dag: DAG, private val jobScope: CoroutineScope =
 
     // 启动任务调度
     suspend fun start() {
-        val readyTasks = mutableListOf<Task>()
+        val taskQueue = PriorityQueue<Task>()
 
         // 初始化任务的入度，只考虑强依赖，不考虑弱依赖
         for (task in dag.tasks.values) {
-            task.indegree = task.dependencies.size // 只计算强依赖
+            task.indegree = task.dependencies.size
             if (task.indegree == 0) {
                 readyTasks.add(task)
             }
@@ -67,39 +76,68 @@ class TaskScheduler(private val dag: DAG, private val jobScope: CoroutineScope =
             val tasksToExecute = readyTasks.toList()
             readyTasks.clear()
 
-            // 按照优先级对任务进行排序，优先级高的任务先执行
-            val sortedTasks = tasksToExecute.sorted()
+            // 按优先级排序任务
+            tasksToExecute.forEach { taskQueue.add(it) }
 
-            // 执行当前任务并更新依赖
-            val jobs = sortedTasks.map { task ->
-                jobScope.async {
-                    println("Executing task: ${task.id}")
+            // 按任务类型分组并执行
+            val ioTasks = mutableListOf<Task>()
+            val cpuTasks = mutableListOf<Task>()
 
-                    if (task.weakDependencies.isEmpty() || task.weakDependencies.any { it.status == TaskStatus.COMPLETED }) {
-                        execute(task)
-
-                        // 完成当前任务后，更新依赖关系
-                        mutex.withLock {
-                            for (dependentTask in task.dependents) {
-                                dependentTask.indegree--
-                                if (dependentTask.indegree == 0) {
-                                    readyTasks.add(dependentTask)
-                                }
-                            }
-                        }
-                    } else {
-                        // 如果有弱依赖未完成，将任务推迟
-                        mutex.withLock {
-                            readyTasks.add(task)
-                        }
-                    }
+            // 分配任务到不同队列
+            while (taskQueue.isNotEmpty()) {
+                val task = taskQueue.poll()
+                if (task.type == TaskType.IO) {
+                    ioTasks.add(task)
+                } else {
+                    cpuTasks.add(task)
                 }
             }
 
-            // 等待当前批次的任务执行完毕
-            jobs.awaitAll()
+            // 执行 I/O 密集型任务
+            val ioJobs = ioTasks.map { task ->
+                ioTaskPool.async {
+                    println("Executing IO Task: ${task.id}")
+
+                    executeAndUpdateDependentTasks(task)
+                }
+            }
+
+            // 执行 CPU 密集型任务
+            val cpuJobs = cpuTasks.map { task ->
+                cpuTaskPool.async {
+                    println("Executing CPU Task: ${task.id}")
+
+                    executeAndUpdateDependentTasks(task)
+                }
+            }
+
+            // 等待所有任务完成
+            ioJobs.awaitAll()
+            cpuJobs.awaitAll()
         }
 
         println("All tasks have been executed.")
+    }
+
+    // 更新依赖任务的入度，并将入度为 0 的任务加入待执行队列
+    private suspend fun executeAndUpdateDependentTasks(task: Task) {
+        if (task.weakDependencies.isEmpty() || task.weakDependencies.any { it.status == TaskStatus.COMPLETED }) {
+            execute(task)
+
+            // 完成当前任务后，更新依赖关系
+            mutex.withLock {
+                for (dependentTask in task.dependents) {
+                    dependentTask.indegree--
+                    if (dependentTask.indegree == 0) {
+                        readyTasks.add(dependentTask)
+                    }
+                }
+            }
+        } else {
+            // 如果有弱依赖未完成，将任务推迟
+            mutex.withLock {
+                readyTasks.add(task)
+            }
+        }
     }
 }

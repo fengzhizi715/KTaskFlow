@@ -16,51 +16,56 @@ enum class TaskStatus {
     TIMED_OUT
 }
 
+enum class TaskType {
+    IO,  // I/O 密集型任务
+    CPU  // 计算密集型任务
+}
+
 data class Task(
     val id: String,
     val taskName: String,
-    val priority: Int = 0, // 默认优先级为 0, 值越大，优先级越高
+    var priority: Int = 0, // 默认优先级为 0, 值越大，优先级越高
+    val type: TaskType = TaskType.IO,  // 默认是 I/O 密集型任务
     val taskAction: suspend () -> Unit
 ) : Comparable<Task> {
+
     var status: TaskStatus = TaskStatus.NOT_STARTED
     var currentRetryCount: Int = 0
     var retries: Int = 3 // 默认重试次数
-    var successCallback: (() -> Unit)? = null
-    var failureCallback: (() -> Unit)? = null
     var timeout: Long = 5000 // 默认超时时间
     var retryDelay: Long = 1000 // 重试延迟时间
 
-    // 任务的强依赖
-    val dependencies = mutableListOf<Task>()
+    var successCallback: (() -> Unit)? = null
+    var failureCallback: (() -> Unit)? = null
 
-    // 任务的弱依赖
-    val weakDependencies = mutableListOf<Task>()
+    val dependencies = mutableListOf<Task>()  // 强依赖任务
+    val weakDependencies = mutableListOf<Task>()  // 弱依赖任务
+    val dependents = mutableListOf<Task>()  // 依赖此任务的任务
+    var indegree: Int = 0  // 入度
 
-    // 依赖此任务的其他任务
-    val dependents = mutableListOf<Task>()
-
-    // 入度，表示任务的依赖关系数
-    var indegree: Int = 0
-
-    // 设置任务的强依赖关系
+    // 设置强依赖任务
     fun dependsOn(vararg tasks: Task) {
         for (task in tasks) {
             dependencies.add(task)
             task.dependents.add(this)
-            indegree++ // 依赖的任务增加入度
+            indegree++ // 每添加一个依赖，当前任务的入度加一
         }
     }
 
-    // 设置任务的弱依赖关系
+    // 设置弱依赖任务
     fun weakDependsOn(vararg tasks: Task) {
         for (task in tasks) {
             weakDependencies.add(task)
         }
     }
 
-    // 比较任务优先级，支持任务优先级的调度
+    // 修改优先级
+    fun updatePriority(newPriority: Int) {
+        priority = newPriority
+    }
+
+    // 排序规则：优先级高的排在前面
     override fun compareTo(other: Task): Int {
-        // 优先级越高越优先调度，优先级高的任务排前
-        return other.priority - this.priority
+        return other.priority - this.priority  // 优先级越高，排序越前
     }
 }
