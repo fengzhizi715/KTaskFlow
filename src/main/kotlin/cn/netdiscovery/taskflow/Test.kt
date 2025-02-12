@@ -12,13 +12,13 @@ import kotlinx.coroutines.*
  */
 fun main() = runBlocking {
     val dag = dag {
-        val task1 = task("1", "Task 1", 3) {
+        val task1 = task("1", "Task 1", 1) {
             println("${System.currentTimeMillis()}, Task 1 start!")
             Thread.sleep(1000)
         }
-        val task2 = task("2", "Task 2", 1) {
+        val task2 = task("2", "Task 2", 3) {
             println("${System.currentTimeMillis()}, Task 2 start!")
-            Thread.sleep(500)
+            Thread.sleep(2000)
         }
         val task3 = task("3", "Task 3", 2) {
             println("${System.currentTimeMillis()}, Task 3 start!")
@@ -37,8 +37,8 @@ fun main() = runBlocking {
 
         // 弱依赖
         task4.weakDependsOn(task1, task2)
-
-        task5.dependsOn(task3,task4)
+//
+        task5.weakDependsOn(task3,task4)
 
         task1.successCallback = { println("${System.currentTimeMillis()}, Task 1 completed!") }
         task2.successCallback = { println("${System.currentTimeMillis()}, Task 2 completed!") }

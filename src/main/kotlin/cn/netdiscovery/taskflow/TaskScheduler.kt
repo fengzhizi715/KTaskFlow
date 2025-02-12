@@ -52,7 +52,7 @@ class TaskScheduler(private val dag: DAG, private val jobScope: CoroutineScope =
 
     // 启动任务调度
     suspend fun start() {
-        val readyTasks = PriorityBlockingQueue<Task>()
+        val readyTasks = mutableListOf<Task>()
 
         // 初始化任务的入度，只考虑强依赖，不考虑弱依赖
         for (task in dag.tasks.values) {
@@ -64,27 +64,40 @@ class TaskScheduler(private val dag: DAG, private val jobScope: CoroutineScope =
 
         // 持续调度任务，直到所有任务都完成
         while (readyTasks.isNotEmpty()) {
-            val task = readyTasks.poll() // 获取优先级最高的任务
+            val tasksToExecute = readyTasks.toList()
+            readyTasks.clear()
 
-            // 执行任务
-            if (task.weakDependencies.isEmpty() || task.weakDependencies.any { it.status == TaskStatus.COMPLETED }) {
-                execute(task)
+            // 按照优先级对任务进行排序，优先级高的任务先执行
+            val sortedTasks = tasksToExecute.sorted()
 
-                // 完成当前任务后，更新依赖关系
-                mutex.withLock {
-                    for (dependentTask in task.dependents) {
-                        dependentTask.indegree--
-                        if (dependentTask.indegree == 0) {
-                            readyTasks.add(dependentTask)
+            // 执行当前任务并更新依赖
+            val jobs = sortedTasks.map { task ->
+                jobScope.async {
+                    println("Executing task: ${task.id}")
+
+                    if (task.weakDependencies.isEmpty() || task.weakDependencies.any { it.status == TaskStatus.COMPLETED }) {
+                        execute(task)
+
+                        // 完成当前任务后，更新依赖关系
+                        mutex.withLock {
+                            for (dependentTask in task.dependents) {
+                                dependentTask.indegree--
+                                if (dependentTask.indegree == 0) {
+                                    readyTasks.add(dependentTask)
+                                }
+                            }
+                        }
+                    } else {
+                        // 如果有弱依赖未完成，将任务推迟
+                        mutex.withLock {
+                            readyTasks.add(task)
                         }
                     }
                 }
-            } else {
-                // 如果有弱依赖未完成，将任务推迟
-                mutex.withLock {
-                    readyTasks.add(task)
-                }
             }
+
+            // 等待当前批次的任务执行完毕
+            jobs.awaitAll()
         }
 
         println("All tasks have been executed.")
