@@ -19,8 +19,8 @@ enum class TaskStatus {
 data class Task(
     val id: String,
     val taskName: String,
-    val taskAction: suspend () -> Unit,
-    val priority: Int = 0 // 默认优先级为 0, 值越大，优先级越高
+    val priority: Int = 0, // 默认优先级为 0, 值越大，优先级越高
+    val taskAction: suspend () -> Unit
 ) : Comparable<Task> {
     var status: TaskStatus = TaskStatus.NOT_STARTED
     var currentRetryCount: Int = 0
