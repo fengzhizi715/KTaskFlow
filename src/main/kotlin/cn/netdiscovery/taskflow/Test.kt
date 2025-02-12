@@ -36,9 +36,9 @@ fun main() = runBlocking {
         task3.dependsOn(task1,task2)
 
         // 弱依赖
-        task4.weakDependsOn(task1, task2)
-//
-        task5.weakDependsOn(task3,task4)
+        task4.weakDependsOn(task1,task2)
+
+        task5.dependsOn(task3,task4)
 
         task1.successCallback = { println("${System.currentTimeMillis()}, Task 1 completed!") }
         task2.successCallback = { println("${System.currentTimeMillis()}, Task 2 completed!") }

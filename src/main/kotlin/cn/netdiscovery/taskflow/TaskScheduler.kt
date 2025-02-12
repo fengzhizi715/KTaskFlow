@@ -97,7 +97,6 @@ class TaskScheduler(private val dag: DAG) {
             val ioJobs = ioTasks.map { task ->
                 ioTaskPool.async {
                     println("Executing IO Task: ${task.id}")
-
                     executeAndUpdateDependentTasks(task)
                 }
             }
@@ -106,7 +105,6 @@ class TaskScheduler(private val dag: DAG) {
             val cpuJobs = cpuTasks.map { task ->
                 cpuTaskPool.async {
                     println("Executing CPU Task: ${task.id}")
-
                     executeAndUpdateDependentTasks(task)
                 }
             }
@@ -129,15 +127,25 @@ class TaskScheduler(private val dag: DAG) {
                 for (dependentTask in task.dependents) {
                     dependentTask.indegree--
                     if (dependentTask.indegree == 0) {
-                        readyTasks.add(dependentTask)
+                        addToReadyTasks(dependentTask)
                     }
                 }
             }
         } else {
             // 如果有弱依赖未完成，将任务推迟
             mutex.withLock {
-                readyTasks.add(task)
+                if (!readyTasks.contains(task)) {
+                    readyTasks.add(task)
+                }
             }
+        }
+    }
+
+    // 将任务添加到 readyTasks 队列，并按优先级排序
+    private fun addToReadyTasks(task: Task) {
+        if (!readyTasks.contains(task) && task.status != TaskStatus.COMPLETED) {
+            readyTasks.add(task)
+            readyTasks.sortByDescending { it.priority } // 按优先级降序排序
         }
     }
 }
