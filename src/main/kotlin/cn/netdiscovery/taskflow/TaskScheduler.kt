@@ -67,37 +67,6 @@ class TaskScheduler(private val dag: DAG, private val jobScope: CoroutineScope =
             val tasksToExecute = readyTasks.toList()
             readyTasks.clear()
 
-//            val jobs = tasksToExecute.map { task ->
-//                jobScope.async {
-//                    println("task id = ${task.id}")
-//
-//                    // 执行任务
-//                    if (task.weakDependencies.size==0) {
-//                        execute(task)
-//
-//                        // 完成当前任务后，更新依赖关系
-//                        for (dependentTask in task.dependents) {
-//                            dependentTask.indegree--
-//                            if (dependentTask.indegree == 0) {
-//                                readyTasks.add(dependentTask)
-//                            }
-//                        }
-//                    } else {
-//
-//                        // 检查依赖是否完成
-//                        val dependencyCompleted = task.weakDependencies.any { it.status == TaskStatus.COMPLETED }
-//
-//                        println("dependencyCompleted = $dependencyCompleted")
-//
-//                        if (dependencyCompleted) {
-//                            execute(task)
-//                        } else {
-//                            readyTasks.add(task)
-//                        }
-//                    }
-//                }
-//            }
-
             // 执行当前任务并更新依赖
             val jobs = tasksToExecute.map { task ->
                 jobScope.async {
