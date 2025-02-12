@@ -16,11 +16,12 @@ enum class TaskStatus {
     TIMED_OUT
 }
 
-class Task(
+data class Task(
     val id: String,
     val taskName: String,
-    val taskAction: suspend () -> Unit
-) {
+    val taskAction: suspend () -> Unit,
+    val priority: Int = 0 // 默认优先级为 0, 值越大，优先级越高
+) : Comparable<Task> {
     var status: TaskStatus = TaskStatus.NOT_STARTED
     var currentRetryCount: Int = 0
     var retries: Int = 3 // 默认重试次数
@@ -55,5 +56,11 @@ class Task(
         for (task in tasks) {
             weakDependencies.add(task)
         }
+    }
+
+    // 比较任务优先级，支持任务优先级的调度
+    override fun compareTo(other: Task): Int {
+        // 优先级越高越优先调度，优先级高的任务排前
+        return other.priority - this.priority
     }
 }

@@ -12,26 +12,26 @@ import kotlinx.coroutines.*
  */
 fun main() = runBlocking {
     val dag = dag {
-        val task1 = task("1", "Task 1") {
+        val task1 = task("1", "Task 1", {
             println("${System.currentTimeMillis()}, Task 1 start!")
             Thread.sleep(1000)
-        }
-        val task2 = task("2", "Task 2") {
+        }, priority = 3)
+        val task2 = task("2", "Task 2", {
             println("${System.currentTimeMillis()}, Task 2 start!")
             Thread.sleep(500)
-        }
-        val task3 = task("3", "Task 3") {
+        }, priority = 1)
+        val task3 = task("3", "Task 3", {
             println("${System.currentTimeMillis()}, Task 3 start!")
             Thread.sleep(1500)
-        }
-        val task4 = task("4", "Task 4") {
+        }, priority = 2)
+        val task4 = task("4", "Task 4", {
             println("${System.currentTimeMillis()}, Task 4 start!")
             Thread.sleep(2000)
-        }
-        val task5 = task("5", "Task 5") {
+        }, priority = 0)
+        val task5 = task("5", "Task 5", {
             println("${System.currentTimeMillis()}, Task 5 start!")
             Thread.sleep(1000)
-        }
+        }, priority = 0)
 
         task3.dependsOn(task1,task2)
 
