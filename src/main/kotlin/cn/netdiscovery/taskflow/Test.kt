@@ -24,11 +24,11 @@ fun main() = runBlocking {
             println("${System.currentTimeMillis()}, Task 3 start!")
             Thread.sleep(1500)
         }
-        val task4 = task("4", "Task 4") {
+        val task4 = task("4", "Task 4", type = TaskType.CPU) {
             println("${System.currentTimeMillis()}, Task 4 start!")
             Thread.sleep(2000)
         }
-        val task5 = task("5", "Task 5") {
+        val task5 = task("5", "Task 5", type = TaskType.CPU) {
             println("${System.currentTimeMillis()}, Task 5 start!")
             Thread.sleep(1000)
         }
