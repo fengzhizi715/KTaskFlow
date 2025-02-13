@@ -98,6 +98,7 @@ class TaskScheduler(private val dag: DAG) {
                 ioTaskPool.async {
                     println("Executing IO Task: ${task.id}")
                     executeAndUpdateDependentTasks(task)
+                    updateWeakDependenciesStatus(task) // 更新弱依赖状态
                 }
             }
 
@@ -106,6 +107,7 @@ class TaskScheduler(private val dag: DAG) {
                 cpuTaskPool.async {
                     println("Executing CPU Task: ${task.id}")
                     executeAndUpdateDependentTasks(task)
+                    updateWeakDependenciesStatus(task) // 更新弱依赖状态
                 }
             }
 
@@ -119,7 +121,7 @@ class TaskScheduler(private val dag: DAG) {
 
     // 更新依赖任务的入度，并将入度为 0 的任务加入待执行队列
     private suspend fun executeAndUpdateDependentTasks(task: Task) {
-        if (task.weakDependencies.isEmpty() || task.weakDependencies.any { it.status == TaskStatus.COMPLETED }) {
+        if (task.weakDependencies.isEmpty() || task.weakDependenciesCompleted) {
             execute(task)
 
             // 完成当前任务后，更新依赖关系
@@ -138,6 +140,13 @@ class TaskScheduler(private val dag: DAG) {
                     readyTasks.add(task)
                 }
             }
+        }
+    }
+
+    private fun updateWeakDependenciesStatus(task: Task) {
+        // 检查弱依赖是否都完成
+        if (task.weakDependencies.all { it.status == TaskStatus.COMPLETED }) {
+            task.weakDependenciesCompleted = true
         }
     }
 

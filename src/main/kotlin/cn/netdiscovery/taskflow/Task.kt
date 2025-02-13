@@ -38,10 +38,12 @@ data class Task(
     var successCallback: (() -> Unit)? = null
     var failureCallback: (() -> Unit)? = null
 
-    val dependencies = mutableListOf<Task>()  // 强依赖任务
-    val weakDependencies = mutableListOf<Task>()  // 弱依赖任务
-    val dependents = mutableListOf<Task>()  // 依赖此任务的任务
-    var indegree: Int = 0  // 入度
+    val dependencies = mutableListOf<Task>()        // 强依赖任务
+    val weakDependencies = mutableListOf<Task>()    // 弱依赖任务
+    val dependents = mutableListOf<Task>()          // 依赖此任务的任务
+    var indegree: Int = 0                           // 入度，表示任务的依赖关系数
+
+    var weakDependenciesCompleted: Boolean = false  // 标记弱依赖是否已完成
 
     // 设置强依赖任务
     fun dependsOn(vararg tasks: Task) {
