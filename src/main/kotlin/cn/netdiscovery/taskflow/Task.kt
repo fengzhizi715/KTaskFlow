@@ -66,8 +66,8 @@ data class Task(
         priority = newPriority
     }
 
-    // 排序规则：优先级高的排在前面
+    // 排序规则：优先级高的排在前面，优先级越高，排序越前
     override fun compareTo(other: Task): Int {
-        return other.priority - this.priority  // 优先级越高，排序越前
+        return other.priority - this.priority
     }
 }
