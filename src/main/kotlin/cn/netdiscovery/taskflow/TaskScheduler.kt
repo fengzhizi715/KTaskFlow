@@ -64,7 +64,7 @@ class TaskScheduler(private val dag: DAG) {
         val taskQueue = PriorityQueue<Task>()
 
         // 初始化任务的入度，只考虑强依赖，不考虑弱依赖
-        for (task in dag.tasks.values) {
+        for (task in dag.getTasks().values) {
             task.indegree = task.dependencies.size
             if (task.indegree == 0) {
                 readyTasks.add(task)

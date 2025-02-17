@@ -22,7 +22,7 @@ fun generateDotFile(dag: DAG): String {
     sb.append("digraph G {\n")
 
     // 生成任务的节点
-    for (task in dag.tasks.values) {
+    for (task in dag.getTasks().values) {
         // 输出任务节点
         sb.append("  ${task.id} [label=\"${task.taskName}\"];\n")
 
