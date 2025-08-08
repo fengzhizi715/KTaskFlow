@@ -18,30 +18,6 @@ interface TaskAction {
     suspend fun execute(input: Any?): Any?
 }
 
-// 通用的 TaskAction 实现
-//class GenericTaskAction<I, O>(
-//    private val action: suspend (I) -> O
-//) : TaskAction {
-//
-//    @Suppress("UNCHECKED_CAST")
-//    override suspend fun execute(input: Any?): Any? {
-//        return try {
-//            action(input as I)
-//        } catch (e: ClassCastException) {
-//            // 自动尝试从 List 提取单个元素
-//            if (input is List<*> && input.size == 1) {
-//                try {
-//                    action(input[0] as I)
-//                } catch (e2: Exception) {
-//                    throw IllegalArgumentException("Invalid input type: ${input[0]?.javaClass}", e2)
-//                }
-//            } else {
-//                throw IllegalArgumentException("Invalid input type: ${input?.javaClass}", e)
-//            }
-//        }
-//    }
-//}
-
 class SmartGenericTaskAction<I, O>(
     private val action: suspend (I) -> O,
     private val inputClass: Class<I>
