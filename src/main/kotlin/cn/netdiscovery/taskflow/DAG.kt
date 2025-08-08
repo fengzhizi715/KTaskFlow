@@ -1,5 +1,7 @@
 package cn.netdiscovery.taskflow
 
+import java.util.concurrent.ConcurrentHashMap
+
 /**
  *
  * @FileName:
@@ -9,22 +11,20 @@ package cn.netdiscovery.taskflow
  * @version: V1.0 <描述当前版本功能>
  */
 class DAG {
-    private val tasks = mutableMapOf<String, Task>()
+    private val tasks = ConcurrentHashMap<String, Task>()
+
+    fun task(id: String, name: String, priority: Int = 0, type: TaskType = TaskType.IO, action: TaskAction): Task {
+        val t = Task(id, name, priority, type, action)
+        tasks[id] = t
+        return t
+    }
 
     fun getTasks() = tasks
 
-    fun <I, O> task(
-        id: String,
-        taskName: String,
-        priority: Int = 0,
-        type: TaskType = TaskType.IO,
-        taskAction: suspend (I) -> O
-    ): Task {
-        val task = Task(id, taskName, priority, type, GenericTaskAction(taskAction))
-        if (tasks.containsKey(id)) {
-            throw IllegalArgumentException("Task with id $id already exists.")
-        }
-        tasks[id] = task
-        return task
+    fun getTaskById(id: String): Task? = tasks[id]
+
+    // 动态添加任务（支持从调度器调用）
+    fun addTask(task: Task) {
+        tasks[task.id] = task
     }
 }

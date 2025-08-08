@@ -34,6 +34,19 @@ class TaskScheduler(private val dag: DAG) {
     // 待执行的任务优先级队列
     private val taskQueue = PriorityQueue<Task>()
 
+    // 动态添加任务
+    suspend fun addAndSchedule(task: Task) {
+        dag.addTask(task)
+
+        mutex.withLock {
+            task.indegree = task.dependencies.size
+            val weakReady = task.weakDependencies.isEmpty() || task.weakDependenciesCompleted
+            if (task.indegree == 0 && weakReady) {
+                readyTasks.add(task)
+            }
+        }
+    }
+
     // 启动任务调度
     suspend fun start() {
         dag.getTasks().values.forEach { task ->

@@ -19,12 +19,47 @@ interface TaskAction {
 }
 
 // 通用的 TaskAction 实现
-class GenericTaskAction<I, O>(
-    private val action: suspend (I) -> O
+//class GenericTaskAction<I, O>(
+//    private val action: suspend (I) -> O
+//) : TaskAction {
+//
+//    @Suppress("UNCHECKED_CAST")
+//    override suspend fun execute(input: Any?): Any? {
+//        return try {
+//            action(input as I)
+//        } catch (e: ClassCastException) {
+//            // 自动尝试从 List 提取单个元素
+//            if (input is List<*> && input.size == 1) {
+//                try {
+//                    action(input[0] as I)
+//                } catch (e2: Exception) {
+//                    throw IllegalArgumentException("Invalid input type: ${input[0]?.javaClass}", e2)
+//                }
+//            } else {
+//                throw IllegalArgumentException("Invalid input type: ${input?.javaClass}", e)
+//            }
+//        }
+//    }
+//}
+
+class SmartGenericTaskAction<I, O>(
+    private val action: suspend (I) -> O,
+    private val inputClass: Class<I>
 ) : TaskAction {
     @Suppress("UNCHECKED_CAST")
     override suspend fun execute(input: Any?): Any? {
-        return action(input as I)
+        return try {
+            if (inputClass.isInstance(input)) {
+                action(input as I)
+            } else {
+                // 自动包裹输入为 List<I>（比如单个输入变成 list）
+                val wrapped = listOfNotNull(input) as I
+                action(wrapped)
+            }
+        } catch (e: Exception) {
+            println("SmartGenericTaskAction error: ${e.message}")
+            throw e
+        }
     }
 }
 
@@ -40,6 +75,12 @@ enum class TaskType {
     IO,  // I/O 密集型任务
     CPU  // 计算密集型任务
 }
+
+data class TaskResult(
+    val success: Boolean,
+    val value: Any? = null,
+    val error: Throwable? = null
+)
 
 class Task(
     val id: String,
@@ -64,7 +105,7 @@ class Task(
 
     // 存储任务输出
     @Volatile
-    var output: Any? = null
+    var output: TaskResult? = null
 
     @Volatile
     var weakDependenciesCompleted: Boolean = false

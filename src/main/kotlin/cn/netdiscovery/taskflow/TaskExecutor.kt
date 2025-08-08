@@ -16,7 +16,6 @@ import kotlinx.coroutines.withTimeout
  */
 class TaskExecutor(private val mutex: Mutex) {
 
-    // 执行任务，包含超时和重试逻辑
     suspend fun execute(task: Task) {
         try {
             withTimeout(task.timeout) {
@@ -24,10 +23,35 @@ class TaskExecutor(private val mutex: Mutex) {
                     task.status = TaskStatus.IN_PROGRESS
                 }
 
-                val inputs = task.dependencies.values.map { it.output }
-                task.output = task.taskAction.execute(inputs)
+                val inputs = task.dependencies.values.mapNotNull { it.output?.value }
+
+                val resolvedInput: Any? = when {
+                    inputs.isEmpty() -> Unit
+                    inputs.size == 1 -> inputs[0]
+                    else -> inputs
+                }
+
+//                val result = try {
+//                    task.taskAction.execute(resolvedInput)
+//                } catch (e: ClassCastException) {
+//                    throw IllegalArgumentException(
+//                        "Task [${task.id}] received input of type ${resolvedInput?.javaClass?.name}, " +
+//                                "which is incompatible with its expected input type. Hint: check your GenericTaskAction declaration.",
+//                        e
+//                    )
+//                }
+
+                val result = when (val deps = task.dependencies.values.map { it.output?.value }) {
+                    is List<*> -> when (deps.size) {
+                        0 -> task.taskAction.execute(Unit)
+                        1 -> task.taskAction.execute(deps[0])
+                        else -> task.taskAction.execute(deps)
+                    }
+                    else -> task.taskAction.execute(deps)
+                }
 
                 mutex.withLock {
+                    task.output = TaskResult(success = true, value = result)
                     task.status = TaskStatus.COMPLETED
                 }
 
@@ -35,18 +59,21 @@ class TaskExecutor(private val mutex: Mutex) {
             }
         } catch (e: TimeoutCancellationException) {
             mutex.withLock {
+                task.output = TaskResult(success = false, error = e)
                 task.status = TaskStatus.TIMED_OUT
             }
             task.failureCallback?.invoke()
             retry(task)
         } catch (e: Exception) {
             mutex.withLock {
+                task.output = TaskResult(success = false, error = e)
                 task.status = TaskStatus.FAILED
             }
             task.failureCallback?.invoke()
             retry(task)
         }
     }
+
 
     private suspend fun retry(task: Task) {
         if (task.currentRetryCount < task.retries) {
