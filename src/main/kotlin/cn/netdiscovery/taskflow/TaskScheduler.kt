@@ -4,6 +4,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.*
+import java.util.concurrent.ConcurrentLinkedQueue
 
 /**
  *
@@ -18,78 +19,59 @@ class TaskScheduler(private val dag: DAG) {
     // 并发控制
     private val mutex = Mutex()
 
-    // I/O 密集型任务的线程池
+    // I/O 密集型任务的协程池
     private val ioTaskPool = CoroutineScope(Dispatchers.IO)
 
-    // CPU 密集型任务的线程池
+    // CPU 密集型任务的协程池
     private val cpuTaskPool = CoroutineScope(Dispatchers.Default)
 
-    // 全局任务队列
-    private val readyTasks = mutableListOf<Task>()
+    // 任务执行器
+    private val taskExecutor = TaskExecutor()
 
-    // 执行任务
-    private suspend fun execute(task: Task) {
-        try {
-            withTimeout(task.timeout) {
-                task.status = TaskStatus.IN_PROGRESS
-                task.taskAction()
-                task.successCallback?.invoke()
-                task.status = TaskStatus.COMPLETED
-            }
-        } catch (e: TimeoutCancellationException) {
-            task.status = TaskStatus.TIMED_OUT
-            task.failureCallback?.invoke()
-            retry(task)
-        } catch (e: Exception) {
-            task.status = TaskStatus.FAILED
-            task.failureCallback?.invoke()
-            retry(task)
-        }
-    }
+    // 全局任务队列，使用线程安全队列
+    private val readyTasks = ConcurrentLinkedQueue<Task<*, *>>()
 
-    // 重试机制
-    private suspend fun retry(task: Task) {
-        if (task.currentRetryCount < task.retries) {
-            task.currentRetryCount++
-            println("Retrying task: ${task.id}, attempt: ${task.currentRetryCount}")
-            delay(task.retryDelay) // 可配置的重试间隔
-            execute(task)
-        } else {
-            println("Task ${task.id} failed after ${task.retries} retries.")
-        }
-    }
+    // 待执行的任务优先级队列
+    private val taskQueue = PriorityQueue<Task<*, *>>()
 
     // 启动任务调度
     suspend fun start() {
-        val taskQueue = PriorityQueue<Task>()
-
-        // 初始化任务的入度，只考虑强依赖，不考虑弱依赖
-        for (task in dag.getTasks().values) {
+        // 初始化任务的入度和依赖
+        dag.getTasks().values.forEach { task ->
             task.indegree = task.dependencies.size
             if (task.indegree == 0) {
                 readyTasks.add(task)
             }
         }
 
-        // 持续调度任务，直到所有任务都完成
-        while (readyTasks.isNotEmpty()) {
-            val tasksToExecute = readyTasks.toList()
-            readyTasks.clear()
+        while (readyTasks.isNotEmpty() || dag.getTasks().values.any { it.status == TaskStatus.IN_PROGRESS }) {
+            // 将就绪任务添加到优先级队列
+            while (readyTasks.isNotEmpty()) {
+                val task = readyTasks.poll()
+                if (task != null) {
+                    taskQueue.add(task)
+                }
+            }
 
-            // 按优先级排序任务
-            tasksToExecute.forEach { taskQueue.add(it) }
+            // 按任务类型分组
+            val ioTasks = mutableListOf<Task<*, *>>()
+            val cpuTasks = mutableListOf<Task<*, *>>()
 
-            // 按任务类型分组并执行
-            val ioTasks = mutableListOf<Task>()
-            val cpuTasks = mutableListOf<Task>()
-
-            // 分配任务到不同队列
             while (taskQueue.isNotEmpty()) {
                 val task = taskQueue.poll()
-                if (task.type == TaskType.IO) {
-                    ioTasks.add(task)
+
+                // 检查弱依赖是否完成
+                val weakDependenciesCompleted = task.weakDependencies.all { it.status == TaskStatus.COMPLETED }
+
+                if (weakDependenciesCompleted) {
+                    if (task.type == TaskType.IO) {
+                        ioTasks.add(task)
+                    } else {
+                        cpuTasks.add(task)
+                    }
                 } else {
-                    cpuTasks.add(task)
+                    // 弱依赖未完成，重新加入就绪队列，等待下次调度
+                    readyTasks.add(task)
                 }
             }
 
@@ -97,8 +79,7 @@ class TaskScheduler(private val dag: DAG) {
             val ioJobs = ioTasks.map { task ->
                 ioTaskPool.async {
                     println("Executing IO Task: ${task.id}")
-                    executeAndUpdateDependentTasks(task)
-                    updateWeakDependenciesStatus(task) // 更新弱依赖状态
+                    executeAndNotify(task)
                 }
             }
 
@@ -106,12 +87,11 @@ class TaskScheduler(private val dag: DAG) {
             val cpuJobs = cpuTasks.map { task ->
                 cpuTaskPool.async {
                     println("Executing CPU Task: ${task.id}")
-                    executeAndUpdateDependentTasks(task)
-                    updateWeakDependenciesStatus(task) // 更新弱依赖状态
+                    executeAndNotify(task)
                 }
             }
 
-            // 等待所有任务完成
+            // 等待本次循环所有任务完成，然后进行下一次调度
             ioJobs.awaitAll()
             cpuJobs.awaitAll()
         }
@@ -119,42 +99,22 @@ class TaskScheduler(private val dag: DAG) {
         println("All tasks have been executed.")
     }
 
-    // 更新依赖任务的入度，并将入度为 0 的任务加入待执行队列
-    private suspend fun executeAndUpdateDependentTasks(task: Task) {
-        if (task.weakDependencies.isEmpty() || task.weakDependenciesCompleted) {
-            execute(task)
+    // 执行任务并通知其依赖任务
+    private suspend fun executeAndNotify(task: Task<*, *>) {
+        taskExecutor.execute(task)
 
-            // 完成当前任务后，更新依赖关系
+        // 任务完成后，更新其依赖任务的状态
+        if (task.status == TaskStatus.COMPLETED) {
             mutex.withLock {
                 for (dependentTask in task.dependents) {
                     dependentTask.indegree--
+                    // 检查是否所有强依赖都已完成
                     if (dependentTask.indegree == 0) {
-                        addToReadyTasks(dependentTask)
+                        // 将任务添加到就绪队列
+                        readyTasks.add(dependentTask)
                     }
                 }
             }
-        } else {
-            // 如果有弱依赖未完成，将任务推迟
-            mutex.withLock {
-                if (!readyTasks.contains(task)) {
-                    readyTasks.add(task)
-                }
-            }
-        }
-    }
-
-    private fun updateWeakDependenciesStatus(task: Task) {
-        // 检查弱依赖是否都完成
-        if (task.weakDependencies.all { it.status == TaskStatus.COMPLETED }) {
-            task.weakDependenciesCompleted = true
-        }
-    }
-
-    // 将任务添加到 readyTasks 队列，并按优先级排序
-    private fun addToReadyTasks(task: Task) {
-        if (!readyTasks.contains(task) && task.status != TaskStatus.COMPLETED) {
-            readyTasks.add(task)
-            readyTasks.sortByDescending { it.priority } // 按优先级降序排序
         }
     }
 }

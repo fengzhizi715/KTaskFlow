@@ -20,20 +20,29 @@ fun dag(init: DAG.() -> Unit): DAG {
 fun generateDotFile(dag: DAG): String {
     val sb = StringBuilder()
     sb.append("digraph G {\n")
+    sb.append("  rankdir=LR; // 从左到右的布局\n")
+
+    // 为不同类型的任务定义不同样式
+    sb.append("  node [shape=box, style=filled];\n")
+    sb.append("  node [fillcolor=lightblue] [label=\"IO\"];\n")
+    sb.append("  node [fillcolor=lightgreen] [label=\"CPU\"];\n")
 
     // 生成任务的节点
     for (task in dag.getTasks().values) {
-        // 输出任务节点
-        sb.append("  ${task.id} [label=\"${task.taskName}\"];\n")
+        val color = if (task.type == TaskType.IO) "lightblue" else "lightgreen"
+        sb.append("  ${task.id} [label=\"${task.taskName}\", fillcolor=$color];\n")
+    }
 
-        // 生成强依赖关系（不包括弱依赖）
+    // 生成依赖关系
+    for (task in dag.getTasks().values) {
+        // 强依赖
         for (dep in task.dependencies) {
             sb.append("  ${dep.id} -> ${task.id} [label=\"strong\"];\n")
         }
 
-        // 如果需要，可以为弱依赖添加特殊标注，但不生成连接线
+        // 弱依赖
         for (weakDep in task.weakDependencies) {
-            sb.append("  ${weakDep.id} -> ${task.id} [style=dotted, label=\"weak\"];\n")
+            sb.append("  ${weakDep.id} -> ${task.id} [style=dashed, label=\"weak\"];\n")
         }
     }
 
