@@ -73,6 +73,7 @@ class Task(
 
     var successCallback: (() -> Unit)? = null
     var failureCallback: (() -> Unit)? = null
+    var rollbackAction: (() -> Unit)? = null
 
     val dependencies = ConcurrentHashMap<String, Task>()
     val weakDependencies = ConcurrentHashMap<String, Task>()
@@ -85,6 +86,13 @@ class Task(
 
     @Volatile
     var weakDependenciesCompleted: Boolean = false
+
+    @Volatile
+    var isCancelled: Boolean = false
+
+    fun cancel() {
+        isCancelled = true
+    }
 
     // 设置强依赖任务
     fun dependsOn(vararg tasks: Task) {

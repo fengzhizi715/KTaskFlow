@@ -18,36 +18,21 @@ class TaskExecutor(private val mutex: Mutex) {
 
     suspend fun execute(task: Task) {
         try {
+            if (task.isCancelled) {
+                println("Task ${task.id} was cancelled before execution.")
+                return
+            }
+
             withTimeout(task.timeout) {
                 mutex.withLock {
                     task.status = TaskStatus.IN_PROGRESS
                 }
 
                 val inputs = task.dependencies.values.mapNotNull { it.output?.value }
-
-                val resolvedInput: Any? = when {
-                    inputs.isEmpty() -> Unit
-                    inputs.size == 1 -> inputs[0]
-                    else -> inputs
-                }
-
-//                val result = try {
-//                    task.taskAction.execute(resolvedInput)
-//                } catch (e: ClassCastException) {
-//                    throw IllegalArgumentException(
-//                        "Task [${task.id}] received input of type ${resolvedInput?.javaClass?.name}, " +
-//                                "which is incompatible with its expected input type. Hint: check your GenericTaskAction declaration.",
-//                        e
-//                    )
-//                }
-
-                val result = when (val deps = task.dependencies.values.map { it.output?.value }) {
-                    is List<*> -> when (deps.size) {
-                        0 -> task.taskAction.execute(Unit)
-                        1 -> task.taskAction.execute(deps[0])
-                        else -> task.taskAction.execute(deps)
-                    }
-                    else -> task.taskAction.execute(deps)
+                val result = when (inputs.size) {
+                    0 -> task.taskAction.execute(Unit)
+                    1 -> task.taskAction.execute(inputs[0])
+                    else -> task.taskAction.execute(inputs)
                 }
 
                 mutex.withLock {
@@ -58,22 +43,21 @@ class TaskExecutor(private val mutex: Mutex) {
                 task.successCallback?.invoke()
             }
         } catch (e: TimeoutCancellationException) {
-            mutex.withLock {
-                task.output = TaskResult(success = false, error = e)
-                task.status = TaskStatus.TIMED_OUT
-            }
-            task.failureCallback?.invoke()
-            retry(task)
+            handleFailure(task, e, TaskStatus.TIMED_OUT)
         } catch (e: Exception) {
-            mutex.withLock {
-                task.output = TaskResult(success = false, error = e)
-                task.status = TaskStatus.FAILED
-            }
-            task.failureCallback?.invoke()
-            retry(task)
+            handleFailure(task, e, TaskStatus.FAILED)
         }
     }
 
+    private suspend fun handleFailure(task: Task, e: Throwable, status: TaskStatus) {
+        mutex.withLock {
+            task.output = TaskResult(success = false, error = e)
+            task.status = status
+        }
+        task.failureCallback?.invoke()
+        task.rollbackAction?.invoke() // 回滚逻辑
+        retry(task)
+    }
 
     private suspend fun retry(task: Task) {
         if (task.currentRetryCount < task.retries) {

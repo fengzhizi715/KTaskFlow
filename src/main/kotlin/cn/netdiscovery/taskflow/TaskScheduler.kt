@@ -102,6 +102,16 @@ class TaskScheduler(private val dag: DAG) {
         println("All tasks have been executed.")
     }
 
+    // 任务取消
+    suspend fun cancelTask(taskId: String) {
+        val task = dag.getTaskById(taskId)
+        if (task != null) {
+            mutex.withLock {
+                task.cancel()
+            }
+        }
+    }
+
     private suspend fun executeAndNotify(task: Task) {
         taskExecutor.execute(task)
 
