@@ -15,14 +15,17 @@ import kotlinx.coroutines.withTimeout
 class TaskExecutor {
 
     // 执行任务，包含超时和重试逻辑
-    suspend fun execute(task: Task<*, *>) {
+    suspend fun execute(task: Task) {
         try {
             withTimeout(task.timeout) {
                 task.status = TaskStatus.IN_PROGRESS
-                // 由于 taskAction 是泛型，这里需要进行类型转换
-                @Suppress("UNCHECKED_CAST")
-                val action = task.taskAction as (Any?) -> Any?
-                task.output = action(task.input) as Nothing?
+
+                // 始终获取所有强依赖的输出，并作为当前任务的输入列表
+                val inputs = task.dependencies.values.map { it.output }
+
+                // 安全地调用任务动作，传递输入列表
+                task.output = task.taskAction.execute(inputs)
+
                 task.successCallback?.invoke()
                 task.status = TaskStatus.COMPLETED
             }
@@ -37,8 +40,7 @@ class TaskExecutor {
         }
     }
 
-    // 重试机制
-    private suspend fun retry(task: Task<*, *>) {
+    private suspend fun retry(task: Task) {
         if (task.currentRetryCount < task.retries) {
             task.currentRetryCount++
             println("Retrying task: ${task.id}, attempt: ${task.currentRetryCount}")

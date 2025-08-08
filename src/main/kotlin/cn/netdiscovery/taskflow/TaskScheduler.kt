@@ -29,14 +29,13 @@ class TaskScheduler(private val dag: DAG) {
     private val taskExecutor = TaskExecutor()
 
     // 全局任务队列，使用线程安全队列
-    private val readyTasks = ConcurrentLinkedQueue<Task<*, *>>()
+    private val readyTasks = ConcurrentLinkedQueue<Task>()
 
     // 待执行的任务优先级队列
-    private val taskQueue = PriorityQueue<Task<*, *>>()
+    private val taskQueue = PriorityQueue<Task>()
 
     // 启动任务调度
     suspend fun start() {
-        // 初始化任务的入度和依赖
         dag.getTasks().values.forEach { task ->
             task.indegree = task.dependencies.size
             if (task.indegree == 0) {
@@ -45,7 +44,6 @@ class TaskScheduler(private val dag: DAG) {
         }
 
         while (readyTasks.isNotEmpty() || dag.getTasks().values.any { it.status == TaskStatus.IN_PROGRESS }) {
-            // 将就绪任务添加到优先级队列
             while (readyTasks.isNotEmpty()) {
                 val task = readyTasks.poll()
                 if (task != null) {
@@ -53,15 +51,13 @@ class TaskScheduler(private val dag: DAG) {
                 }
             }
 
-            // 按任务类型分组
-            val ioTasks = mutableListOf<Task<*, *>>()
-            val cpuTasks = mutableListOf<Task<*, *>>()
+            val ioTasks = mutableListOf<Task>()
+            val cpuTasks = mutableListOf<Task>()
 
             while (taskQueue.isNotEmpty()) {
                 val task = taskQueue.poll()
 
-                // 检查弱依赖是否完成
-                val weakDependenciesCompleted = task.weakDependencies.all { it.status == TaskStatus.COMPLETED }
+                val weakDependenciesCompleted = task.weakDependencies.values.all { it.status == TaskStatus.COMPLETED }
 
                 if (weakDependenciesCompleted) {
                     if (task.type == TaskType.IO) {
@@ -70,12 +66,10 @@ class TaskScheduler(private val dag: DAG) {
                         cpuTasks.add(task)
                     }
                 } else {
-                    // 弱依赖未完成，重新加入就绪队列，等待下次调度
                     readyTasks.add(task)
                 }
             }
 
-            // 执行 I/O 密集型任务
             val ioJobs = ioTasks.map { task ->
                 ioTaskPool.async {
                     println("Executing IO Task: ${task.id}")
@@ -83,7 +77,6 @@ class TaskScheduler(private val dag: DAG) {
                 }
             }
 
-            // 执行 CPU 密集型任务
             val cpuJobs = cpuTasks.map { task ->
                 cpuTaskPool.async {
                     println("Executing CPU Task: ${task.id}")
@@ -91,7 +84,6 @@ class TaskScheduler(private val dag: DAG) {
                 }
             }
 
-            // 等待本次循环所有任务完成，然后进行下一次调度
             ioJobs.awaitAll()
             cpuJobs.awaitAll()
         }
@@ -99,18 +91,14 @@ class TaskScheduler(private val dag: DAG) {
         println("All tasks have been executed.")
     }
 
-    // 执行任务并通知其依赖任务
-    private suspend fun executeAndNotify(task: Task<*, *>) {
+    private suspend fun executeAndNotify(task: Task) {
         taskExecutor.execute(task)
 
-        // 任务完成后，更新其依赖任务的状态
         if (task.status == TaskStatus.COMPLETED) {
             mutex.withLock {
-                for (dependentTask in task.dependents) {
+                for (dependentTask in task.dependents.values) {
                     dependentTask.indegree--
-                    // 检查是否所有强依赖都已完成
                     if (dependentTask.indegree == 0) {
-                        // 将任务添加到就绪队列
                         readyTasks.add(dependentTask)
                     }
                 }

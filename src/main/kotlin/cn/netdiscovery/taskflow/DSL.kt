@@ -37,12 +37,12 @@ fun generateDotFile(dag: DAG): String {
     for (task in dag.getTasks().values) {
         // 强依赖
         for (dep in task.dependencies) {
-            sb.append("  ${dep.id} -> ${task.id} [label=\"strong\"];\n")
+            sb.append("  ${dep.key} -> ${task.id} [label=\"strong\"];\n")
         }
 
         // 弱依赖
         for (weakDep in task.weakDependencies) {
-            sb.append("  ${weakDep.id} -> ${task.id} [style=dashed, label=\"weak\"];\n")
+            sb.append("  ${weakDep.key} -> ${task.id} [style=dashed, label=\"weak\"];\n")
         }
     }
 

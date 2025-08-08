@@ -9,7 +9,7 @@ package cn.netdiscovery.taskflow
  * @version: V1.0 <描述当前版本功能>
  */
 class DAG {
-    private val tasks = mutableMapOf<String, Task<*, *>>()
+    private val tasks = mutableMapOf<String, Task>()
 
     fun getTasks() = tasks
 
@@ -19,8 +19,8 @@ class DAG {
         priority: Int = 0,
         type: TaskType = TaskType.IO,
         taskAction: suspend (I) -> O
-    ): Task<I, O> {
-        val task = Task(id, taskName, priority, type, taskAction)
+    ): Task {
+        val task = Task(id, taskName, priority, type, GenericTaskAction(taskAction))
         if (tasks.containsKey(id)) {
             throw IllegalArgumentException("Task with id $id already exists.")
         }

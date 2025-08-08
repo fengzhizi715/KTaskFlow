@@ -52,5 +52,40 @@ fun main() = runBlocking {
 //    // 创建 TaskScheduler 并启动任务
 //    val scheduler = TaskScheduler(dag)
 //    scheduler.start()
+
+    val results = mutableListOf<String>()
+
+    val dag = dag {
+        val taskA = task<List<Any?>, String>("taskA", "Task A") { inputs ->
+            // taskA 没有依赖，所以 inputs 是空列表
+            println("Executing Task A with inputs: $inputs")
+            results.add("A")
+            "Result from A"
+        }
+
+        val taskB = task<List<Any?>, String>("taskB", "Task B") { inputs ->
+            // taskB 依赖 taskA，所以 inputs 是包含 taskA 输出的列表
+            val inputFromA = inputs.firstOrNull() as? String
+            println("Executing Task B with input: $inputFromA")
+            results.add("B")
+            "Result from B with input: $inputFromA"
+        }
+
+        val taskC = task<List<Any?>, String>("taskC", "Task C") { inputs ->
+            // taskC 依赖 taskB，所以 inputs 是包含 taskB 输出的列表
+            val inputFromB = inputs.firstOrNull() as? String
+            println("Executing Task C with input: $inputFromB")
+            results.add("C")
+            "Result from C with input: $inputFromB"
+        }
+
+        taskB.dependsOn(taskA)
+        taskC.dependsOn(taskB)
+    }
+
+    val scheduler = TaskScheduler(dag)
+    scheduler.start()
+
+    println(generateDotFile(dag))
 }
 
