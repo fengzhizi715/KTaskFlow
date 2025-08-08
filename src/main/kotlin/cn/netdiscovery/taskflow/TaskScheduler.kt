@@ -26,7 +26,7 @@ class TaskScheduler(private val dag: DAG) {
     private val cpuTaskPool = CoroutineScope(Dispatchers.Default)
 
     // 任务执行器
-    private val taskExecutor = TaskExecutor()
+    private val taskExecutor = TaskExecutor(mutex)
 
     // 全局任务队列，使用线程安全队列
     private val readyTasks = ConcurrentLinkedQueue<Task>()
@@ -57,9 +57,7 @@ class TaskScheduler(private val dag: DAG) {
             while (taskQueue.isNotEmpty()) {
                 val task = taskQueue.poll()
 
-                val weakDependenciesCompleted = task.weakDependencies.values.all { it.status == TaskStatus.COMPLETED }
-
-                if (weakDependenciesCompleted) {
+                if (task.weakDependencies.isEmpty() || task.weakDependenciesCompleted) {
                     if (task.type == TaskType.IO) {
                         ioTasks.add(task)
                     } else {
@@ -96,10 +94,18 @@ class TaskScheduler(private val dag: DAG) {
 
         if (task.status == TaskStatus.COMPLETED) {
             mutex.withLock {
-                for (dependentTask in task.dependents.values) {
-                    dependentTask.indegree--
-                    if (dependentTask.indegree == 0) {
-                        readyTasks.add(dependentTask)
+                // 更新所有依赖该任务的任务
+                for (dependent in task.dependents.values) {
+                    dependent.indegree--
+                    // ✅ 缓存弱依赖完成状态
+                    if (!dependent.weakDependenciesCompleted &&
+                        dependent.weakDependencies.values.all { it.status == TaskStatus.COMPLETED }
+                    ) {
+                        dependent.weakDependenciesCompleted = true
+                    }
+
+                    if (dependent.indegree == 0) {
+                        readyTasks.add(dependent)
                     }
                 }
             }

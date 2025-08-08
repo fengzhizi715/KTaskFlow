@@ -66,6 +66,9 @@ class Task(
     @Volatile
     var output: Any? = null
 
+    @Volatile
+    var weakDependenciesCompleted: Boolean = false
+
     // 设置强依赖任务
     fun dependsOn(vararg tasks: Task) {
         for (task in tasks) {
