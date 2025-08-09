@@ -1,10 +1,10 @@
 package cn.netdiscovery.taskflow
 
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import java.util.*
-import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  *
@@ -15,120 +15,109 @@ import java.util.concurrent.ConcurrentLinkedQueue
  * @version: V1.0 <描述当前版本功能>
  */
 class TaskScheduler(private val dag: DAG) {
-
-    // 并发控制
+    private val readyChannel = Channel<Task>(Channel.UNLIMITED)
     private val mutex = Mutex()
 
-    // I/O 密集型任务的协程池
-    private val ioTaskPool = CoroutineScope(Dispatchers.IO)
+    private val cpuTaskPool = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val ioTaskPool = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    // CPU 密集型任务的协程池
-    private val cpuTaskPool = CoroutineScope(Dispatchers.Default)
-
-    // 任务执行器
     private val taskExecutor = TaskExecutor(mutex)
 
-    // 全局任务队列，使用线程安全队列
-    private val readyTasks = ConcurrentLinkedQueue<Task>()
+    private val activeTasks = AtomicInteger(0)
+    private val allTasksCompleted = CompletableDeferred<Unit>()
 
-    // 待执行的任务优先级队列
-    private val taskQueue = PriorityQueue<Task>()
-
-    // 动态添加任务
-    suspend fun addAndSchedule(task: Task) {
-        dag.addTask(task)
-
-        mutex.withLock {
-            task.indegree = task.dependencies.size
-            val weakReady = task.weakDependencies.isEmpty() || task.weakDependenciesCompleted
-            if (task.indegree == 0 && weakReady) {
-                readyTasks.add(task)
-            }
-        }
-    }
-
-    // 启动任务调度
     suspend fun start() {
+        cpuTaskPool.launch {
+            for (task in readyChannel) {
+                activeTasks.incrementAndGet()
+                launchTask(task)
+            }
+        }
+        enqueueInitialTasks()
+
+        allTasksCompleted.await()  // 等所有任务完成
+    }
+
+    private fun enqueueInitialTasks() {
         dag.getTasks().values.forEach { task ->
-            task.indegree = task.dependencies.size
             if (task.indegree == 0) {
-                readyTasks.add(task)
-            }
-        }
-
-        while (readyTasks.isNotEmpty() || dag.getTasks().values.any { it.status == TaskStatus.IN_PROGRESS }) {
-            while (readyTasks.isNotEmpty()) {
-                val task = readyTasks.poll()
-                if (task != null) {
-                    taskQueue.add(task)
-                }
-            }
-
-            val ioTasks = mutableListOf<Task>()
-            val cpuTasks = mutableListOf<Task>()
-
-            while (taskQueue.isNotEmpty()) {
-                val task = taskQueue.poll()
-
-                if (task.weakDependencies.isEmpty() || task.weakDependenciesCompleted) {
-                    if (task.type == TaskType.IO) {
-                        ioTasks.add(task)
-                    } else {
-                        cpuTasks.add(task)
-                    }
+                if (task.weakDependencies.isEmpty()) {
+                    cpuTaskPool.launch { readyChannel.send(task) }
                 } else {
-                    readyTasks.add(task)
+                    launchWeakDependencyWaitAndMaybeEnqueue(task)
                 }
-            }
-
-            val ioJobs = ioTasks.map { task ->
-                ioTaskPool.async {
-                    println("Executing IO Task: ${task.id}")
-                    executeAndNotify(task)
-                }
-            }
-
-            val cpuJobs = cpuTasks.map { task ->
-                cpuTaskPool.async {
-                    println("Executing CPU Task: ${task.id}")
-                    executeAndNotify(task)
-                }
-            }
-
-            ioJobs.awaitAll()
-            cpuJobs.awaitAll()
-        }
-
-        println("All tasks have been executed.")
-    }
-
-    // 任务取消
-    suspend fun cancelTask(taskId: String) {
-        val task = dag.getTaskById(taskId)
-        if (task != null) {
-            mutex.withLock {
-                task.cancel()
             }
         }
     }
 
-    private suspend fun executeAndNotify(task: Task) {
-        taskExecutor.execute(task)
+    private fun launchWeakDependencyWaitAndMaybeEnqueue(task: Task) {
+        ioTaskPool.launch {
+            val startTime = System.currentTimeMillis()
+            while (true) {
+                val allCompleted = task.weakDependencies.values.all { it.status == TaskStatus.COMPLETED }
+                val elapsed = System.currentTimeMillis() - startTime
+                val timeout = task.timeout
 
-        if (task.status == TaskStatus.COMPLETED) {
+                if (allCompleted) break
+                if (timeout > 0 && elapsed > timeout) {
+                    println("Weak dependency timeout for task ${task.id}, continuing execution.")
+                    break
+                }
+                delay(50)
+            }
+
             mutex.withLock {
-                // 更新所有依赖该任务的任务
-                for (dependent in task.dependents.values) {
-                    dependent.indegree--
-                    // ✅ 缓存弱依赖完成状态
-                    if (!dependent.weakDependenciesCompleted &&
-                        dependent.weakDependencies.values.all { it.status == TaskStatus.COMPLETED }
-                    ) {
-                        dependent.weakDependenciesCompleted = true
-                    }
+                if (task.indegree == 0) {
+                    readyChannel.send(task)
+                }
+            }
+        }
+    }
 
-                    if (dependent.indegree == 0) {
-                        readyTasks.add(dependent)
+    private suspend fun launchTask(task: Task) {
+        val pool = if (task.type == TaskType.CPU) cpuTaskPool else ioTaskPool
+        pool.launch {
+            val input = collectDependencyOutputs(task)
+            try {
+                taskExecutor.execute(task, input)
+                onTaskCompleted(task)
+            } catch (e: CancellationException) {
+                println("Task ${task.id} was cancelled.")
+                throw e
+            } catch (e: Exception) {
+                println("Task ${task.id} failed: ${e.message}")
+            } finally {
+                if (activeTasks.decrementAndGet() == 0) {
+                    allTasksCompleted.complete(Unit)
+                }
+            }
+        }
+    }
+
+    private suspend fun collectDependencyOutputs(task: Task): Any? {
+        val outputs = mutableListOf<Any?>()
+        for ((_, dep) in task.dependencies) {
+            while (dep.status != TaskStatus.COMPLETED) {
+                delay(10)
+            }
+            outputs.add(dep.output?.value)
+        }
+        return when {
+            outputs.isEmpty() -> null
+            outputs.size == 1 -> outputs.first()
+            else -> outputs
+        }
+    }
+
+    private suspend fun onTaskCompleted(task: Task) {
+        mutex.withLock {
+            for ((_, dependent) in task.dependents) {
+                dependent.indegree--
+                if (dependent.indegree == 0) {
+                    if (dependent.weakDependencies.isEmpty()) {
+                        readyChannel.send(dependent)
+                    } else {
+                        launchWeakDependencyWaitAndMaybeEnqueue(dependent)
                     }
                 }
             }

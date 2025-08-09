@@ -27,4 +27,13 @@ class DAG {
     fun addTask(task: Task) {
         tasks[task.id] = task
     }
+
+    suspend fun getTaskResultAsync(task: Task): TaskResult {
+        return task.completion.await()
+    }
+
+    suspend fun getTaskResultAsync(taskId: String): TaskResult {
+        val task = tasks[taskId] ?: throw IllegalArgumentException("Task $taskId not found")
+        return task.completion.await()
+    }
 }

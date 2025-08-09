@@ -1,5 +1,6 @@
 package cn.netdiscovery.taskflow
 
+import kotlinx.coroutines.CompletableDeferred
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -68,7 +69,8 @@ enum class TaskStatus {
     IN_PROGRESS,
     COMPLETED,
     FAILED,
-    TIMED_OUT
+    TIMED_OUT,
+    CANCELLED
 }
 
 enum class TaskType {
@@ -89,19 +91,24 @@ class Task(
     val type: TaskType = TaskType.IO,
     val taskAction: TaskAction
 ) : Comparable<Task> {
+    @Volatile
     var status: TaskStatus = TaskStatus.NOT_STARTED
+
+    @Volatile
     var currentRetryCount: Int = 0
     var retries: Int = 3
-    var timeout: Long = 5000
-    var retryDelay: Long = 1000
+    var timeout: Long = 5000L
+    var retryDelay: Long = 1000L
 
-    var successCallback: (() -> Unit)? = null
-    var failureCallback: (() -> Unit)? = null
-    var rollbackAction: (() -> Unit)? = null
+    var successCallback: (suspend () -> Unit)? = null
+    var failureCallback: (suspend () -> Unit)? = null
+    var rollbackAction: (suspend () -> Unit)? = null
 
-    val dependencies = ConcurrentHashMap<String, Task>()
-    val weakDependencies = ConcurrentHashMap<String, Task>()
-    val dependents = ConcurrentHashMap<String, Task>()
+    val dependencies = ConcurrentHashMap<String, Task>()      // 上游
+    val weakDependencies = ConcurrentHashMap<String, Task>()  // 弱依赖（上游）
+    val dependents = ConcurrentHashMap<String, Task>()        // 下游
+
+    @Volatile
     var indegree: Int = 0
 
     // 存储任务输出
@@ -114,11 +121,27 @@ class Task(
     @Volatile
     var isCancelled: Boolean = false
 
-    fun cancel() {
-        isCancelled = true
+    // 弱依赖行为配置
+    var weakDependencyThreshold: Float = 1.0f  // 1.0 = all, 0.5 = 一半完成即可
+    var weakDependencyTimeout: Long = 0L       // ms, 0 表示不等待
+
+    // 回滚去重标志
+    @Volatile
+    var rollbackDone: Boolean = false
+
+    val completion = CompletableDeferred<TaskResult>()
+
+    fun markCompleted(result: TaskResult) {
+        output = result
+        completion.complete(result)
     }
 
-    // 设置强依赖任务
+    fun cancel() {
+        isCancelled = true
+        status = TaskStatus.CANCELLED
+    }
+
+    // 设置强依赖任务（上游）
     fun dependsOn(vararg tasks: Task) {
         for (task in tasks) {
             dependencies[task.id] = task
@@ -126,7 +149,7 @@ class Task(
         }
     }
 
-    // 设置弱依赖任务
+    // 设置弱依赖任务（上游）
     fun weakDependsOn(vararg tasks: Task) {
         for (task in tasks) {
             weakDependencies[task.id] = task

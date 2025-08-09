@@ -16,7 +16,7 @@ import kotlinx.coroutines.withTimeout
  */
 class TaskExecutor(private val mutex: Mutex) {
 
-    suspend fun execute(task: Task) {
+    suspend fun execute(task: Task, input: Any?) {
         try {
             if (task.isCancelled) {
                 println("Task ${task.id} was cancelled before execution.")
@@ -28,15 +28,16 @@ class TaskExecutor(private val mutex: Mutex) {
                     task.status = TaskStatus.IN_PROGRESS
                 }
 
-                val inputs = task.dependencies.values.mapNotNull { it.output?.value }
-                val result = when (inputs.size) {
-                    0 -> task.taskAction.execute(Unit)
-                    1 -> task.taskAction.execute(inputs[0])
-                    else -> task.taskAction.execute(inputs)
+                // 执行任务动作
+                val result = if (task.taskAction is SmartGenericTaskAction<*, *>) {
+                    @Suppress("UNCHECKED_CAST")
+                    (task.taskAction as SmartGenericTaskAction<Any?, Any?>).execute(input)
+                } else {
+                    task.taskAction.execute(null)
                 }
 
                 mutex.withLock {
-                    task.output = TaskResult(success = true, value = result)
+                    task.markCompleted(TaskResult(success = true, value = result))
                     task.status = TaskStatus.COMPLETED
                 }
 
@@ -55,16 +56,16 @@ class TaskExecutor(private val mutex: Mutex) {
             task.status = status
         }
         task.failureCallback?.invoke()
-        task.rollbackAction?.invoke() // 回滚逻辑
+        task.rollbackAction?.invoke()
         retry(task)
     }
 
     private suspend fun retry(task: Task) {
-        if (task.currentRetryCount < task.retries) {
+        if (task.currentRetryCount < task.retries && !task.isCancelled) {
             task.currentRetryCount++
             println("Retrying task: ${task.id}, attempt: ${task.currentRetryCount}")
             delay(task.retryDelay)
-            execute(task)
+            execute(task, task.output?.value)  // 传递上次输入或者 null
         } else {
             println("Task ${task.id} failed after ${task.retries} retries.")
         }
