@@ -19,22 +19,46 @@ interface TaskAction {
 }
 
 class SmartGenericTaskAction<I, O>(
-    private val action: suspend (I) -> O,
-    private val inputClass: Class<I>
+    private val action: suspend (I) -> O
 ) : TaskAction {
     @Suppress("UNCHECKED_CAST")
     override suspend fun execute(input: Any?): Any? {
         return try {
-            if (inputClass.isInstance(input)) {
-                action(input as I)
-            } else {
-                // 自动包裹输入为 List<I>（比如单个输入变成 list）
-                val wrapped = listOfNotNull(input) as I
-                action(wrapped)
+            when {
+                // 输入为 null，且 I 是 Unit
+                input == null && Unit::class.java.isAssignableFrom(getGenericTypeClass()) ->
+                    action(Unit as I)
+
+                // 输入已经是 I 类型
+                getGenericTypeClass().isInstance(input) ->
+                    action(input as I)
+
+                // 输入是列表，且 I 是列表
+                input is List<*> && List::class.java.isAssignableFrom(getGenericTypeClass()) ->
+                    action(input as I)
+
+                // 输入是单值，但 I 是列表
+                input != null && List::class.java.isAssignableFrom(getGenericTypeClass()) ->
+                    action(listOf(input) as I)
+
+                // 其他无法匹配的情况
+                else -> throw IllegalArgumentException(
+                    "SmartGenericTaskAction: Cannot cast ${input?.javaClass} to expected type ${getGenericTypeClass()}"
+                )
             }
         } catch (e: Exception) {
             println("SmartGenericTaskAction error: ${e.message}")
             throw e
+        }
+    }
+
+    private fun getGenericTypeClass(): Class<*> {
+        val type = (action.javaClass.genericInterfaces.firstOrNull()
+            ?: action.javaClass.genericSuperclass)
+        return when (type) {
+            is java.lang.reflect.ParameterizedType -> type.actualTypeArguments[0] as? Class<*>
+                ?: Any::class.java
+            else -> Any::class.java
         }
     }
 }

@@ -56,19 +56,19 @@ fun main() = runBlocking {
 
     val dag = dag {
         val task1 = task("1", "Load Config", 1, TaskType.IO,
-            SmartGenericTaskAction({
+            action= SmartGenericTaskAction<Unit, String> {
                 println("Task 1 running...")
                 delay(500)
                 "config_loaded"
-            }, Unit::class.java)
+            }
         )
 
         val task2 = task("2", "Init Service", 1, TaskType.CPU,
-            SmartGenericTaskAction({ inputs: List<Any?> ->
-                println("Task 2 received input: ${inputs[0]}")
+            SmartGenericTaskAction<String, String> {
+                println("Task 2 received input: ${it}")
                 delay(1000)
                 "service_ready"
-            }, List::class.java as Class<List<Any?>>)
+            }
         )
 
         task2.dependsOn(task1)
