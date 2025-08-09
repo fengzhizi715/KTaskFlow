@@ -12,7 +12,7 @@
 - 内置任务超时控制和失败重试机制，支持回滚操作
 - 支持异步通知，通过 `CompletableDeferred` 优雅等待任务结果
 - 任务优先级调度，基于优先级队列动态调度
-- 并发执行优化，使用 Kotlin Channel + Select 机制降低 CPU 空转
+- 使用 Kotlin 协程 Channel 实现事件驱动任务调度，避免传统轮询带来的 CPU 空转
 
 ---
 
