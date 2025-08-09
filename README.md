@@ -48,11 +48,3 @@ runBlocking {
 * 使用 TaskScheduler 启动调度，异步执行任务
 * 通过 DAG.getTaskResultAsync(taskId) 等待任务完成并获取结果
 * 可调用 TaskScheduler.cancelTask(taskId) 取消任务及其后续依赖任务
-
-## 设计思路
-* 利用 Kotlin 协程高效异步执行任务，避免阻塞
-* 通过 Channel + select 实现任务就绪事件驱动，减少轮询和空转
-* 任务状态和依赖关系使用线程安全的 ConcurrentHashMap 管理
-* 任务执行器支持失败重试和超时，保障业务健壮性
-* 弱依赖机制支持部分完成或超时触发，灵活适应复杂流程
-* 任务取消传播保证无用任务及时终止，节省资源
