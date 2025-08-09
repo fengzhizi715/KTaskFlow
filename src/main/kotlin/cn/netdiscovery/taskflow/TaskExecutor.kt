@@ -52,7 +52,7 @@ class TaskExecutor(private val mutex: Mutex) {
 
     private suspend fun handleFailure(task: Task, e: Throwable, status: TaskStatus) {
         mutex.withLock {
-            task.output = TaskResult(success = false, error = e)
+            task.markFailed(e)
             task.status = status
         }
         task.failureCallback?.invoke()

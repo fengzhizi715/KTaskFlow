@@ -42,6 +42,9 @@ suspend fun testWeakDependencyTimeout() {
 
     val scheduler = TaskScheduler(dag)
     scheduler.start()
+
+    val value = dag.getTaskResultAsync("3").value
+    println(value)
 }
 
 fun main() = runBlocking {

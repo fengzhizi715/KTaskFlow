@@ -26,6 +26,9 @@ suspend fun testParallelTasks() {
 
     val scheduler = TaskScheduler(dag)
     scheduler.start()
+
+    val value = dag.getTaskResultAsync("2").value
+    println(value)
 }
 
 fun main() = runBlocking {

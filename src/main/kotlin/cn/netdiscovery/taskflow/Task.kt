@@ -133,7 +133,17 @@ class Task(
 
     fun markCompleted(result: TaskResult) {
         output = result
-        completion.complete(result)
+        if (!completion.isCompleted) {
+            completion.complete(result)
+        }
+    }
+
+    fun markFailed(error: Throwable) {
+        val result = TaskResult(false, error = error)
+        output = result
+        if (!completion.isCompleted) {
+            completion.complete(result)
+        }
     }
 
     fun cancel() {
