@@ -49,6 +49,22 @@ class TaskScheduler(private val dag: DAG) {
         }
     }
 
+    // 动态添加任务并调度
+    suspend fun addAndSchedule(task: Task) {
+        mutex.withLock {
+            dag.addTask(task)
+            task.indegree = task.dependencies.size
+
+            val weakReady = task.weakDependencies.isEmpty() || task.weakDependenciesCompleted
+
+            if (task.indegree == 0 && weakReady && !task.isCancelled) {
+                readyChannel.send(task)
+            } else if (!task.weakDependencies.isEmpty()) {
+                launchWeakDependencyWaitAndMaybeEnqueue(task)
+            }
+        }
+    }
+
     private fun cancelTaskAndDependents(task: Task) {
         if (task.isCancelled) return // 已取消无需重复
 
