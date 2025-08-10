@@ -125,6 +125,11 @@ class Task(
     var weakDependencyThreshold: Float = 1.0f  // 1.0 = all, 0.5 = 一半完成即可
     var weakDependencyTimeout: Long = 0L       // ms, 0 表示不等待
 
+    var executionTimeout: Long = 0L           // 任务执行超时
+
+    @Volatile
+    var weakDependencyWaitStarted: Boolean = false
+
     // 回滚去重标志
     @Volatile
     var rollbackDone: Boolean = false
@@ -133,17 +138,13 @@ class Task(
 
     fun markCompleted(result: TaskResult) {
         output = result
-        if (!completion.isCompleted) {
-            completion.complete(result)
-        }
+        if (!completion.isCompleted) completion.complete(result)
     }
 
-    fun markFailed(error: Throwable) {
-        val result = TaskResult(false, error = error)
-        output = result
-        if (!completion.isCompleted) {
-            completion.complete(result)
-        }
+    fun markFailed(e: Throwable) {
+        output = TaskResult(false, error = e)
+        if (!completion.isCompleted)
+            completion.complete(output!!)
     }
 
     fun cancel() {

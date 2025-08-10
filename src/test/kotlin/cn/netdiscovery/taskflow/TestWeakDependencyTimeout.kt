@@ -1,7 +1,6 @@
 package cn.netdiscovery.taskflow
 
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.*
 
 /**
  *
@@ -35,16 +34,25 @@ suspend fun testWeakDependencyTimeout() {
             }
         )
 
-        t3.dependsOn(t1)
-        t3.weakDependsOn(t2)
-        t3.timeout = 1000  // 设置弱依赖超时时间1秒
+        t3.dependsOn(t1)         // 强依赖
+        t3.weakDependsOn(t2)     // 弱依赖
+        t3.weakDependencyTimeout = 1000    // 弱依赖最多等 1 秒
+        t3.executionTimeout = 2000         // 任务执行最多 2 秒
     }
 
     val scheduler = TaskScheduler(dag)
-    scheduler.start()
+//    scheduler.start()
 
-    val value = dag.getTaskResultAsync("3").value
-    println(value)
+    val job = CoroutineScope(Dispatchers.Default).launch {
+        scheduler.start()
+    }
+
+    val result = dag.getTaskResultAsync("3") // 会挂起直到 task3 完成
+    println("Task3 result = ${result.value}")
+
+    // 停掉 scheduler
+    scheduler.shutdown()
+    job.join()
 }
 
 fun main() = runBlocking {
