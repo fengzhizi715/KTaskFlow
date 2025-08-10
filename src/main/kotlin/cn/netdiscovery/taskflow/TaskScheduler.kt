@@ -35,16 +35,28 @@ class TaskScheduler(private val dag: DAG) {
     // 关闭标志（原子）
     private val isShuttingDown = AtomicBoolean(false)
 
-    suspend fun start() {
-        // 首次为所有任务设置 indegree（以防你之前没有设置）
-        mutex.withLock {
-            dag.getTasks().values.forEach { it.indegree = it.dependencies.size }
+    // consumer job 引用（用于 shutdown 时取消）
+    @Volatile
+    private var consumerJob: Job? = null
+
+    /**
+     * 非阻塞启动（立即返回，调度在后台运行）
+     */
+    fun startAsync() {
+        // 已经启动则直接返回
+        if (consumerJob != null && consumerJob!!.isActive) return
+
+        // 首次为所有任务设置 indegree（以防未初始化）
+        runBlocking {
+            mutex.withLock {
+                dag.getTasks().values.forEach { it.indegree = it.dependencies.size }
+            }
         }
 
-        // consumer: 从 channel 取任务并派发
-        cpuTaskPool.launch {
+        // 启动 consumer 协程，在后台消费 readyChannel
+        consumerJob = cpuTaskPool.launch {
             for (task in readyChannel) {
-                // 当 channel 被 close() 时，会跳出循环
+                // 如果调度器已经完成（shutdown 完成），退出循环
                 if (allTasksCompleted.isCompleted) break
 
                 println("[Scheduler] got ready task ${task.id}, launching...")
@@ -53,10 +65,16 @@ class TaskScheduler(private val dag: DAG) {
             }
         }
 
-        // 把初始可执行任务放入 channel
+        // 把初始可执行任务放入 channel（异步）
         enqueueInitialTasks()
+    }
 
-        // 等待所有任务完成（此处会在合适时机被 complete）
+    /**
+     * 阻塞式启动（向后兼容）：会阻塞直到所有任务执行完毕
+     */
+    suspend fun start() {
+        startAsync()
+        // 等待所有任务完成信号
         allTasksCompleted.await()
         println("[Scheduler] all tasks completed, start() returning.")
     }
@@ -79,6 +97,9 @@ class TaskScheduler(private val dag: DAG) {
         // 关闭 channel，停止接受新任务发送（send 会抛异常）
         readyChannel.close()
 
+        // 取消 consumer job（安全），以便尽快退出循环（consumer 会在 channel 关闭后退出）
+        consumerJob?.cancel()
+
         // 如果此时没有 active job 和 runningJobs，complete allTasksCompleted 以便 start() 返回
         if (activeTasks.get() == 0 && runningJobs.isEmpty()) {
             if (!allTasksCompleted.isCompleted) allTasksCompleted.complete(Unit)
@@ -86,6 +107,9 @@ class TaskScheduler(private val dag: DAG) {
 
         // 等待所有任务完成
         allTasksCompleted.await()
+        // 取消 pools（可选）
+        cpuTaskPool.coroutineContext.cancelChildren()
+        ioTaskPool.coroutineContext.cancelChildren()
         println("[Scheduler] shutdown complete.")
     }
 
@@ -102,6 +126,14 @@ class TaskScheduler(private val dag: DAG) {
 
         println("[Scheduler] Cancelling task ${task.id}")
         task.cancel()
+        // 确保等待方不会永远等待：把 completion 标记为取消（若还没完成）
+        try {
+            if (!task.completion.isCompleted) {
+                task.markFailed(CancellationException("Task ${task.id} cancelled"))
+            }
+        } catch (_: Exception) {
+        }
+
         runningJobs[task.id]?.cancel()
 
         task.dependents.values.forEach { cancelTaskAndDependents(it, visited) }
@@ -117,7 +149,8 @@ class TaskScheduler(private val dag: DAG) {
 
         mutex.withLock {
             dag.addTask(task)
-            task.indegree = task.dependencies.size
+            // 重新计算 indegree：只统计尚未完成且未被取消的强依赖
+            task.indegree = task.dependencies.values.count { it.status != TaskStatus.COMPLETED && !it.isCancelled }
             enqueueIfReady(task)
         }
     }
@@ -133,7 +166,6 @@ class TaskScheduler(private val dag: DAG) {
         if (strongReady && weakReady && !task.isCancelled && !isShuttingDown.get()) {
             cpuTaskPool.launch {
                 println("[Scheduler] enqueue task ${task.id} -> readyChannel")
-                // 使用 send，注意：若 channel 已关闭会抛异常，这里可捕获或让上层处理
                 try {
                     readyChannel.send(task)
                 } catch (e: ClosedSendChannelException) {
@@ -187,7 +219,13 @@ class TaskScheduler(private val dag: DAG) {
     private fun launchTask(task: Task) {
         if (task.isCancelled) {
             println("[Scheduler] Task ${task.id} is cancelled before execution, skipping.")
-            // treat as completed to unblock dependents
+            // 确保等待者不会挂起
+            try {
+                if (!task.completion.isCompleted) {
+                    task.markFailed(CancellationException("Task ${task.id} cancelled before execution"))
+                }
+            } catch (_: Exception) {}
+            // 仍然通知下游以让依赖链推进
             GlobalScope.launch { runBlocking { onTaskCompleted(task) } }
             return
         }
@@ -200,6 +238,8 @@ class TaskScheduler(private val dag: DAG) {
             val input = collectDependencyOutputsWithLogs(task)
             try {
                 taskExecutor.execute(task, input)
+            } catch (ex: CancellationException) {
+                println("[Scheduler] Task ${task.id} was cancelled during execution.")
             } catch (ex: Exception) {
                 println("[Scheduler] execution exception for ${task.id}: ${ex.message}")
             } finally {
@@ -255,5 +295,12 @@ class TaskScheduler(private val dag: DAG) {
                 enqueueIfReady(dependent)
             }
         }
+    }
+
+    /**
+     * 获取单个任务的 CompletableDeferred<TaskResult>，外部可以 await() 单个任务结果
+     */
+    fun getTaskResultDeferred(taskId: String): CompletableDeferred<TaskResult>? {
+        return dag.getTaskById(taskId)?.completion
     }
 }

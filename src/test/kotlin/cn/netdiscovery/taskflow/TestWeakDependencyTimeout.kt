@@ -41,18 +41,13 @@ suspend fun testWeakDependencyTimeout() {
     }
 
     val scheduler = TaskScheduler(dag)
-//    scheduler.start()
+    scheduler.startAsync()
 
-    val job = CoroutineScope(Dispatchers.Default).launch {
-        scheduler.start()
-    }
-
-    val result = dag.getTaskResultAsync("3") // 会挂起直到 task3 完成
-    println("Task3 result = ${result.value}")
+    val result = scheduler.getTaskResultDeferred("3")?.await()
+    println("Task3 result = ${result?.value}")
 
     // 停掉 scheduler
     scheduler.shutdown()
-    job.join()
 }
 
 fun main() = runBlocking {

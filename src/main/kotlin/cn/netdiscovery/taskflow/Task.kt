@@ -2,6 +2,7 @@ package cn.netdiscovery.taskflow
 
 import kotlinx.coroutines.CompletableDeferred
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CancellationException
 
 /**
  *
@@ -104,14 +105,13 @@ class Task(
     var failureCallback: (suspend () -> Unit)? = null
     var rollbackAction: (suspend () -> Unit)? = null
 
-    val dependencies = ConcurrentHashMap<String, Task>()      // 上游
+    val dependencies = ConcurrentHashMap<String, Task>()      // 强依赖（上游）
     val weakDependencies = ConcurrentHashMap<String, Task>()  // 弱依赖（上游）
     val dependents = ConcurrentHashMap<String, Task>()        // 下游
 
     @Volatile
     var indegree: Int = 0
 
-    // 存储任务输出
     @Volatile
     var output: TaskResult? = null
 
@@ -121,38 +121,45 @@ class Task(
     @Volatile
     var isCancelled: Boolean = false
 
-    // 弱依赖行为配置
-    var weakDependencyThreshold: Float = 1.0f  // 1.0 = all, 0.5 = 一半完成即可
-    var weakDependencyTimeout: Long = 0L       // ms, 0 表示不等待
+    var weakDependencyThreshold: Float = 1.0f
+    var weakDependencyTimeout: Long = 0L
 
-    var executionTimeout: Long = 0L           // 任务执行超时
+    var executionTimeout: Long = 0L
 
     @Volatile
     var weakDependencyWaitStarted: Boolean = false
 
-    // 回滚去重标志
     @Volatile
     var rollbackDone: Boolean = false
 
+    // 对外可 await 的执行结果
     val completion = CompletableDeferred<TaskResult>()
 
     fun markCompleted(result: TaskResult) {
+        status = if (result.success) TaskStatus.COMPLETED else TaskStatus.FAILED
         output = result
-        if (!completion.isCompleted) completion.complete(result)
+        if (!completion.isCompleted) {
+            completion.complete(result)
+        }
     }
 
     fun markFailed(e: Throwable) {
-        output = TaskResult(false, error = e)
-        if (!completion.isCompleted)
-            completion.complete(output!!)
+        status = TaskStatus.FAILED
+        val res = TaskResult(false, error = e)
+        output = res
+        if (!completion.isCompleted) {
+            completion.complete(res)
+        }
     }
 
     fun cancel() {
         isCancelled = true
         status = TaskStatus.CANCELLED
+        if (!completion.isCompleted) {
+            completion.completeExceptionally(CancellationException("Task $id cancelled"))
+        }
     }
 
-    // 设置强依赖任务（上游）
     fun dependsOn(vararg tasks: Task) {
         for (task in tasks) {
             dependencies[task.id] = task
@@ -160,10 +167,10 @@ class Task(
         }
     }
 
-    // 设置弱依赖任务（上游）
     fun weakDependsOn(vararg tasks: Task) {
         for (task in tasks) {
             weakDependencies[task.id] = task
+            task.dependents[this.id] = this
         }
     }
 
