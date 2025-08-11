@@ -64,16 +64,16 @@ suspend fun testComplexDAGExample() {
         // 并行无依赖 D, E
         // 弱依赖 E
         taskG.weakDependsOn(taskE)
-        taskG.timeout = 1000L  // 超过1秒弱依赖超时继续执行
+        taskG.weakDependencyTimeout = 1000L  // 超过1秒弱依赖超时继续执行
     }
 
     val scheduler = TaskScheduler(dag)
-    scheduler.startAsync()
+    scheduler.start()
 
 
     delay(5000) // 确保弱依赖超时触发
     scheduler.shutdown()
-
+//
     println(generateDotFile(dag))
 }
 

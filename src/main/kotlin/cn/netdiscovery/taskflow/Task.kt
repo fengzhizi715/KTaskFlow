@@ -98,7 +98,6 @@ class Task(
     @Volatile
     var currentRetryCount: Int = 0
     var retries: Int = 3
-    var timeout: Long = 5000L
     var retryDelay: Long = 1000L
 
     var successCallback: (suspend () -> Unit)? = null
@@ -122,11 +121,11 @@ class Task(
     var isCancelled: Boolean = false
 
     var weakDependencyThreshold: Float = 1.0f
-    var weakDependencyTimeout: Long = 0L
+    var weakDependencyTimeout: Long = 0L   // 控制弱依赖的等待时长
 
     // 强依赖超时（毫秒，0 表示无限等）
-    var strongDependencyTimeout: Long = 0L
-    var executionTimeout: Long = 0L
+    var strongDependencyTimeout: Long = 0L // 控制强依赖的等待时长
+    var executionTimeout: Long = 0L        // 控制任务本身的执行时长
 
     @Volatile
     var weakDependencyWaitStarted: Boolean = false
