@@ -34,17 +34,11 @@ suspend fun testTaskCancelPropagation() {
     }
 
     val scheduler = TaskScheduler(dag)
-
-    // 启动调度
-    val job = CoroutineScope(Dispatchers.Default).launch {
-        scheduler.start()
-    }
+    scheduler.startAsync()
 
     // 取消任务1，应该导致任务2无法运行
     delay(300)
     scheduler.cancelTask("1")
-
-    job.join()
 }
 
 fun main() = runBlocking {

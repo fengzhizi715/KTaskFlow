@@ -19,24 +19,24 @@
 ## 快速开始
 
 ```kotlin
-val dag = DAG().apply {
-    val taskA = task("A", "Load Config", 1, TaskType.IO, SmartGenericTaskAction<Unit, String> {
-        println("Task A running")
-        delay(300)
-        "config done"
-    })
-    val taskB = task("B", "Initialize DB", 1, TaskType.CPU, SmartGenericTaskAction<String, String> {
-        println("Task B received input: $it")
-        delay(500)
-        "db ready"
-    })
-    taskB.dependsOn(taskA)
-}
+fun main() = runBlocking {
+    val dag = DAG().apply {
+        val taskA = task("A", "Load Config", 1, TaskType.IO, SmartGenericTaskAction<Unit, String> {
+            println("Task A running")
+            delay(300)
+            "config done"
+        })
+        val taskB = task("B", "Initialize DB", 1, TaskType.CPU, SmartGenericTaskAction<String, String> {
+            println("Task B received input: $it")
+            delay(500)
+            "db ready"
+        })
+        taskB.dependsOn(taskA)
+    }
 
-val scheduler = TaskScheduler(dag)
+    val scheduler = TaskScheduler(dag)
+    scheduler.startAsync()
 
-runBlocking {
-    scheduler.start()
     val result = dag.getTaskResultAsync("B")
     println("Task B result: ${result.value}")
 }

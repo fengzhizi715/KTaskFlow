@@ -26,8 +26,8 @@ suspend fun testSingleTask() {
     val scheduler = TaskScheduler(dag)
     scheduler.startAsync()
 
-    val value = dag.getTaskResultAsync("1").value
-    println(value)
+    val result = dag.getTaskResultAsync("1")
+    println(result.value)
 }
 
 fun main() = runBlocking {

@@ -57,9 +57,9 @@ suspend fun testDynamicAddTasks() {
     val r3 = dag.getTaskResultAsync("3")
     println("Task 3 result: ${r3.value}")
 
-    scheduler.shutdown()
-
-    println(generateDotFile(dag))
+//    scheduler.shutdown()
+//
+//    println(generateDotFile(dag))
 }
 
 fun main() = runBlocking {

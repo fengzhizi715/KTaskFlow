@@ -47,7 +47,7 @@ class TaskExecutor(private val mutex: Mutex) {
 
                 mutex.withLock {
                     task.markCompleted(TaskResult(success = true, value = result))
-                    task.status = TaskStatus.COMPLETED
+//                    task.status = TaskStatus.COMPLETED
                 }
 
                 println("[Executor] task ${task.id} completed with value=$result")
@@ -60,10 +60,11 @@ class TaskExecutor(private val mutex: Mutex) {
             println("[Executor] task ${task.id} cancelled during execution.")
             // propagate cancellation, don't retry
             mutex.withLock {
-                if (!task.completion.isCompleted) {
-                    task.completion.complete(TaskResult(false, error = e))
-                }
-                task.status = TaskStatus.FAILED
+//                if (!task.completion.isCompleted) {
+//                    task.completion.complete(TaskResult(false, error = e))
+//                }
+//                task.status = TaskStatus.FAILED
+                task.markFailed(e)
             }
         } catch (e: Exception) {
             println("[Executor] task ${task.id} failed: ${e.message}")
@@ -74,7 +75,7 @@ class TaskExecutor(private val mutex: Mutex) {
     private suspend fun handleFailure(task: Task, e: Throwable, status: TaskStatus) {
         mutex.withLock {
             task.markFailed(e)
-            task.status = status
+//            task.status = status
         }
         task.failureCallback?.invoke()
         // 回滚由你的回滚逻辑处理
