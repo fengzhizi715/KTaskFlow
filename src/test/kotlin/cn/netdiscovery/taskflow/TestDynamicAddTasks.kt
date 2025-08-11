@@ -30,10 +30,7 @@ suspend fun testDynamicAddTasks() {
     }
 
     val scheduler = TaskScheduler(dag)
-
-    val job = CoroutineScope(Dispatchers.Default).launch {
-        scheduler.start()
-    }
+    scheduler.startAsync()
 
     // 等待 task2 运行中
     delay(600)
@@ -60,10 +57,10 @@ suspend fun testDynamicAddTasks() {
     // 通知调度器任务准备就绪
     scheduler.addAndSchedule(task3)
 
-    job.join()
-
     val r3 = dag.getTaskResultAsync("3")
     println("Task 3 result: ${r3.value}")
+
+    scheduler.shutdown()
 
     println(generateDotFile(dag))
 }

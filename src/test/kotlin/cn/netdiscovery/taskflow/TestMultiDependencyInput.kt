@@ -39,7 +39,7 @@ suspend fun testMultiDependencyInput() {
     }
 
     val scheduler = TaskScheduler(dag)
-    scheduler.start()
+    scheduler.startAsync()
 
     val value = dag.getTaskResultAsync("3").value
     println(value)
