@@ -124,6 +124,8 @@ class Task(
     var weakDependencyThreshold: Float = 1.0f
     var weakDependencyTimeout: Long = 0L
 
+    // 强依赖超时（毫秒，0 表示无限等）
+    var strongDependencyTimeout: Long = 0L
     var executionTimeout: Long = 0L
 
     @Volatile

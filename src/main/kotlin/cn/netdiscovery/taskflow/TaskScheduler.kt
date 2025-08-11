@@ -81,9 +81,9 @@ class TaskScheduler(private val dag: DAG) {
 
     /**
      * 优雅关闭：
-     * - 标记正在关闭
-     * - 关闭 readyChannel（使调度的 consumer 退出循环）
-     * - 等待所有正在执行的任务结束（allTasksCompleted）
+     * - 标记正在关闭（拒绝新增任务）
+     * - 不立即关闭 readyChannel，允许已经在进行的弱等待/强等待将它们准备好的任务入队
+     * - 等待所有在途任务完成，再关闭 readyChannel、关闭 pools 并 complete allTasksCompleted
      */
     suspend fun shutdown() {
         // 设置关闭标志，阻止新增任务入队
@@ -94,22 +94,41 @@ class TaskScheduler(private val dag: DAG) {
         }
 
         println("[Scheduler] shutdown initiated.")
-        // 关闭 channel，停止接受新任务发送（send 会抛异常）
-        readyChannel.close()
+        // 不立刻 close readyChannel —— 允许正在等待弱依赖/强依赖的协程把任务入队
+        // 等待所有在途（正在执行或已入队但未开始）任务完成
+        while (true) {
+            // 条件：没有正在执行的任务，并且 channel 中没有待处理的任务
+            val running = runningJobs.isNotEmpty()
+            val active = activeTasks.get() > 0
+            val pendingInChannel = try {
+                // Channel 提供 isEmpty 属性 in kotlinx.coroutines
+                !readyChannel.isEmpty
+            } catch (t: Throwable) {
+                // 保险起见：如果不可查询，则认为可能有元素 -> 等待
+                true
+            }
 
-        // 取消 consumer job（安全），以便尽快退出循环（consumer 会在 channel 关闭后退出）
-        consumerJob?.cancel()
-
-        // 如果此时没有 active job 和 runningJobs，complete allTasksCompleted 以便 start() 返回
-        if (activeTasks.get() == 0 && runningJobs.isEmpty()) {
-            if (!allTasksCompleted.isCompleted) allTasksCompleted.complete(Unit)
+            if (!running && !active && !pendingInChannel) {
+                break
+            }
+            delay(50)
         }
 
-        // 等待所有任务完成
-        allTasksCompleted.await()
-        // 取消 pools（可选）
+        // 现在应该可以安全关闭 channel，让 consumer 退出
+        try {
+            readyChannel.close()
+        } catch (_: Exception) {}
+
+        // 等待 consumer/worker 彻底结束（consumer 会在 channel 关闭后结束）
+        consumerJob?.cancelAndJoin()
+
+        // 完成 overall 信号
+        if (!allTasksCompleted.isCompleted) allTasksCompleted.complete(Unit)
+
+        // 取消 pools 的子任务（可选）
         cpuTaskPool.coroutineContext.cancelChildren()
         ioTaskPool.coroutineContext.cancelChildren()
+
         println("[Scheduler] shutdown complete.")
     }
 
@@ -163,7 +182,8 @@ class TaskScheduler(private val dag: DAG) {
         val strongReady = task.indegree == 0
         val weakReady = task.weakDependencies.isEmpty() || task.weakDependenciesCompleted
 
-        if (strongReady && weakReady && !task.isCancelled && !isShuttingDown.get()) {
+        if (strongReady && weakReady && !task.isCancelled) {
+            // 允许在 shuttingDown 过程中（只要 readyChannel 还没关闭）把已准备好的任务入队执行
             cpuTaskPool.launch {
                 println("[Scheduler] enqueue task ${task.id} -> readyChannel")
                 try {
@@ -202,7 +222,9 @@ class TaskScheduler(private val dag: DAG) {
             mutex.withLock {
                 // 标记弱依赖“已满足”（可能是超时）
                 task.weakDependenciesCompleted = true
-                if (!task.isCancelled && task.indegree == 0 && !isShuttingDown.get()) {
+                // 尝试入队：即便处于 shuttingDown 状态，也允许将已经准备好的任务加入队列，
+                // 因为 shutdown 不立即 close channel（会等到在途任务完成再关闭）
+                if (!task.isCancelled && task.indegree == 0) {
                     println("[Scheduler] enqueue after weak wait: ${task.id}")
                     try {
                         readyChannel.send(task)
@@ -210,7 +232,7 @@ class TaskScheduler(private val dag: DAG) {
                         println("[Scheduler] readyChannel closed, cannot enqueue ${task.id} after weak wait")
                     }
                 } else {
-                    println("[Scheduler] after weak wait: ${task.id} not enqueued (cancelled or indegree !=0 or shuttingDown)")
+                    println("[Scheduler] after weak wait: ${task.id} not enqueued (cancelled or indegree !=0)")
                 }
             }
         }
@@ -253,7 +275,8 @@ class TaskScheduler(private val dag: DAG) {
                 // active/tasks 完成检测
                 if (activeTasks.decrementAndGet() == 0) {
                     // 如果 channel 里没有任务且没有 running jobs，则可以完成 overall
-                    if (readyChannel.isEmpty && runningJobs.isEmpty()) {
+                    val channelHas = try { !readyChannel.isEmpty } catch (_: Throwable) { true }
+                    if (!channelHas && runningJobs.isEmpty()) {
                         if (!allTasksCompleted.isCompleted) {
                             allTasksCompleted.complete(Unit)
                         }
@@ -269,9 +292,17 @@ class TaskScheduler(private val dag: DAG) {
 
     private suspend fun collectDependencyOutputsWithLogs(task: Task): Any? {
         val outputs = mutableListOf<Any?>()
+        val startTime = System.currentTimeMillis()
+        val timeout = if (task.strongDependencyTimeout > 0L) task.strongDependencyTimeout else Long.MAX_VALUE
+
         for ((_, dep) in task.dependencies) {
-            // 只等待强依赖完成
+            // 只等待强依赖完成，但受 strongDependencyTimeout 限制
             while (dep.status != TaskStatus.COMPLETED && !dep.isCancelled) {
+                val elapsed = System.currentTimeMillis() - startTime
+                if (elapsed > timeout) {
+                    println("[Scheduler] Strong dependency wait timeout for ${task.id} on dep ${dep.id}")
+                    break
+                }
                 // debug log
                 println("[Scheduler] task ${task.id} waiting for strong dep ${dep.id} (status=${dep.status})")
                 delay(10)

@@ -68,7 +68,11 @@ suspend fun testComplexDAGExample() {
     }
 
     val scheduler = TaskScheduler(dag)
-    scheduler.start()
+    scheduler.startAsync()
+
+
+    delay(5000) // 确保弱依赖超时触发
+    scheduler.shutdown()
 
     println(generateDotFile(dag))
 }

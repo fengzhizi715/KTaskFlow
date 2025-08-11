@@ -18,7 +18,6 @@ suspend fun testFailureRetryAndRollback() {
                 println("Attempting flaky task")
                 delay(300)
                 if (Math.random() < 0.7) throw RuntimeException("Random failure")
-                println("++++")
                 "success"
             }
         )
@@ -29,7 +28,10 @@ suspend fun testFailureRetryAndRollback() {
     }
 
     val scheduler = TaskScheduler(dag)
-    scheduler.start()
+    scheduler.startAsync()
+
+    val value = dag.getTaskResultAsync("1").value
+    println(value)
 }
 
 fun main() = runBlocking {
