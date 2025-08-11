@@ -33,7 +33,7 @@ suspend fun testSerialTasks() {
     }
 
     val scheduler = TaskScheduler(dag)
-    scheduler.start()
+    scheduler.startAsync()
 
     val value = dag.getTaskResultAsync("2").value
     println(value)
