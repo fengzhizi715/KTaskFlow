@@ -200,7 +200,7 @@ class TaskScheduler(private val dag: DAG) {
     }
 
     private fun launchWeakDependencyWaitAndMaybeEnqueue(task: Task) {
-        ioTaskPool.launch {
+        ioTaskPool.launch {// 这里使用 ioTaskPool ，是因为只是做轮询和延时等待，不占 CPU，放 cpuTaskPool 会浪费资源
             val startTime = System.currentTimeMillis()
             val timeout = if (task.weakDependencyTimeout > 0L) task.weakDependencyTimeout else 0L
 
