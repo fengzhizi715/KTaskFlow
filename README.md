@@ -81,6 +81,16 @@ fun main() = runBlocking {
 
 ### 串行任务
 
+```mermaid
+flowchart LR
+    1["Load Config"]:::IO
+    2["Init Service"]:::CPU
+    1 --> 2
+
+    classDef IO fill:#ADD8E6,stroke:#333,stroke-width:1px;
+    classDef CPU fill:#90EE90,stroke:#333,stroke-width:1px;
+```
+
 ```kotlin
 suspend fun testSerialTasks() {
     val dag = DAG().apply {
@@ -115,17 +125,17 @@ fun main() = runBlocking {
 }
 ```
 
+### 并行任务
+
 ```mermaid
 flowchart LR
-    1["Load Config"]:::IO
-    2["Init Service"]:::CPU
-    1 --> 2
+    0["Parallel Task 0"]:::IO
+    1["Parallel Task 1"]:::IO
+    2["Parallel Task 2"]:::IO
 
     classDef IO fill:#ADD8E6,stroke:#333,stroke-width:1px;
     classDef CPU fill:#90EE90,stroke:#333,stroke-width:1px;
 ```
-
-### 并行任务
 
 ```kotlin
 suspend fun testParallelTasks() {
@@ -153,17 +163,19 @@ fun main() = runBlocking {
 }
 ```
 
+### 依赖多个任务的输出
+
 ```mermaid
 flowchart LR
-    0["Parallel Task 0"]:::IO
-    1["Parallel Task 1"]:::IO
-    2["Parallel Task 2"]:::IO
+    1["Task 1"]:::IO
+    2["Task 2"]:::IO
+    3["Task 3"]:::CPU
+    1 --> 3
+    2 --> 3
 
     classDef IO fill:#ADD8E6,stroke:#333,stroke-width:1px;
     classDef CPU fill:#90EE90,stroke:#333,stroke-width:1px;
 ```
-
-### 依赖多个任务的输出
 
 ```kotlin
 suspend fun testMultiDependencyInput() {
@@ -203,18 +215,6 @@ suspend fun testMultiDependencyInput() {
 fun main() = runBlocking {
     testMultiDependencyInput()
 }
-```
-
-```mermaid
-flowchart LR
-    1["Task 1"]:::IO
-    2["Task 2"]:::IO
-    3["Task 3"]:::CPU
-    1 --> 3
-    2 --> 3
-
-    classDef IO fill:#ADD8E6,stroke:#333,stroke-width:1px;
-    classDef CPU fill:#90EE90,stroke:#333,stroke-width:1px;
 ```
 
 ### 取消任务
