@@ -125,8 +125,43 @@ flowchart LR
     classDef CPU fill:#90EE90,stroke:#333,stroke-width:1px;
 ```
 
-
 ### 并行任务
+
+```kotlin
+suspend fun testParallelTasks() {
+    val dag = DAG().apply {
+        repeat(3) { i ->
+            task("$i", "Parallel Task $i", 1, TaskType.IO,
+                SmartGenericTaskAction<Unit, String> {
+                    println("Parallel task $i running")
+                    delay(300)
+                    "result $i"
+                }
+            )
+        }
+    }
+
+    val scheduler = TaskScheduler(dag)
+    scheduler.startAsync()
+
+    val result = dag.getTaskResultAsync("2")
+    println(result.value)
+}
+
+fun main() = runBlocking {
+    testParallelTasks()
+}
+```
+
+```mermaid
+flowchart LR
+    0["Parallel Task 0"]:::IO
+    1["Parallel Task 1"]:::IO
+    2["Parallel Task 2"]:::IO
+
+    classDef IO fill:#ADD8E6,stroke:#333,stroke-width:1px;
+    classDef CPU fill:#90EE90,stroke:#333,stroke-width:1px;
+```
 
 ### 依赖多个任务的输出
 
