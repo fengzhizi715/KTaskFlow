@@ -21,12 +21,12 @@
 ```kotlin
 fun main() = runBlocking {
     val dag = DAG().apply {
-        val taskA = task("A", "Load Config", 1, TaskType.IO, SmartGenericTaskAction<Unit, String> {
+        val taskA = task("A", "Load Config", 1, TaskType.IO, SmartGenericTaskAction(Unit::class.java) {
             println("Task A running")
             delay(300)
             "config done"
         })
-        val taskB = task("B", "Initialize DB", 1, TaskType.CPU, SmartGenericTaskAction<String, String> {
+        val taskB = task("B", "Initialize DB", 1, TaskType.CPU, SmartGenericTaskAction(String::class.java) {
             println("Task B received input: $it")
             delay(500)
             "db ready"
@@ -142,7 +142,7 @@ suspend fun testParallelTasks() {
     val dag = DAG().apply {
         repeat(3) { i ->
             task("$i", "Parallel Task $i", 1, TaskType.IO,
-                SmartGenericTaskAction<Unit, String> {
+                SmartGenericTaskAction(Unit::class.java) {
                     println("Parallel task $i running")
                     delay(300)
                     "result $i"
@@ -181,21 +181,21 @@ flowchart LR
 suspend fun testMultiDependencyInput() {
     val dag = DAG().apply {
         val t1 = task("1", "Task 1", 1, TaskType.IO,
-            SmartGenericTaskAction<Unit, String> {
+            SmartGenericTaskAction(Unit::class.java) {
                 println("Task 1 running")
                 delay(300)
                 "output1"
             }
         )
         val t2 = task("2", "Task 2", 1, TaskType.IO,
-            SmartGenericTaskAction<Unit, String> {
+            SmartGenericTaskAction(Unit::class.java) {
                 println("Task 2 running")
                 delay(300)
                 "output2"
             }
         )
         val t3 = task("3", "Task 3", 1, TaskType.CPU,
-            SmartGenericTaskAction<List<String>, String> {
+            SmartGenericTaskAction(List::class.java, String::class.java) {
                 println("Task 3 received inputs: $it")
                 delay(300)
                 it.joinToString(", ")
