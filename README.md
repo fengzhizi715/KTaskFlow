@@ -115,7 +115,7 @@ fun main() = runBlocking {
 }
 ```
 
-```mermai
+```mermaid
 flowchart LR
     1["Load Config"]:::IO
     2["Init Service"]:::CPU
