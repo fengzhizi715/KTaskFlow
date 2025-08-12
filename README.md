@@ -220,25 +220,23 @@ fun main() = runBlocking {
 ### 复杂的任务
 
 ```mermaid
-digraph G {
-  rankdir=LR; // 从左到右的布局
-  node [shape=box, style=filled];
-  node [fillcolor=lightblue] [label="IO"];
-  node [fillcolor=lightgreen] [label="CPU"];
-  A [label="Load Config", fillcolor=lightblue];
-  B [label="Initialize DB", fillcolor=lightgreen];
-  C [label="Start Services", fillcolor=lightblue];
-  D [label="Prepare Cache", fillcolor=lightgreen];
-  E [label="Load Metrics", fillcolor=lightblue];
-  F [label="Finalize Startup", fillcolor=lightgreen];
-  G [label="Post Start Cleanup", fillcolor=lightblue];
-  A -> B [label="strong"];
-  B -> C [label="strong"];
-  B -> F [label="strong"];
-  D -> F [label="strong"];
-  F -> G [label="strong"];
-  E -> G [style=dashed, label="weak"];
-}
+flowchart LR
+    A["Load Config"]:::IO
+    B["Initialize DB"]:::CPU
+    C["Start Services"]:::IO
+    D["Prepare Cache"]:::CPU
+    E["Load Metrics"]:::IO
+    F["Finalize Startup"]:::CPU
+    G["Post Start Cleanup"]:::IO
+    A --> B
+    B --> C
+    B --> F
+    D --> F
+    F --> G
+    E -.-> G
+
+    classDef IO fill:#ADD8E6,stroke:#333,stroke-width:1px;
+    classDef CPU fill:#90EE90,stroke:#333,stroke-width:1px;
 ```
 
 ```kotlin
