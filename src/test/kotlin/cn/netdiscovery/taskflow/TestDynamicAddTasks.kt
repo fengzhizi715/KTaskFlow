@@ -13,12 +13,12 @@ import kotlinx.coroutines.runBlocking
  */
 suspend fun testDynamicAddTasks() {
     val dag = DAG().apply {
-        val task1 = task("1", "Task 1", 1, TaskType.IO, SmartGenericTaskAction<Unit, String> {
+        val task1 = task("1", "Task 1", 1, TaskType.IO, SmartGenericTaskAction(Unit::class.java) {
             println("Task 1 running...")
             delay(500)
             "result1"
         })
-        val task2 = task("2", "Task 2", 1, TaskType.CPU, SmartGenericTaskAction<String, String> {
+        val task2 = task("2", "Task 2", 1, TaskType.CPU, SmartGenericTaskAction(String::class.java){
             println("Task 2 received: $it")
             delay(700)
             "result2"
@@ -40,7 +40,7 @@ suspend fun testDynamicAddTasks() {
         taskName = "Task 3",
         priority = 1,
         type = TaskType.IO,
-        taskAction = SmartGenericTaskAction<String, String> {
+        taskAction = SmartGenericTaskAction(String::class.java) {
             println("Task 3 received: $it")
             delay(400)
             "result3"

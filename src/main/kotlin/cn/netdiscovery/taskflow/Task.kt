@@ -21,31 +21,37 @@ interface TaskAction {
 }
 
 class SmartGenericTaskAction<I, O>(
+    private val inputType: Class<I>,                // 主输入类型
+    private val elementType: Class<*>? = null,      // 如果是集合，指定元素类型（可选）
     private val action: suspend (I) -> O
 ) : TaskAction {
+
     @Suppress("UNCHECKED_CAST")
     override suspend fun execute(input: Any?): Any? {
         return try {
             when {
-                // 输入为 null，且 I 是 Unit
-                input == null && Unit::class.java.isAssignableFrom(getGenericTypeClass()) ->
+                // 输入为 null 且类型为 Unit
+                input == null && inputType == Unit::class.java ->
                     action(Unit as I)
 
-                // 输入已经是 I 类型
-                getGenericTypeClass().isInstance(input) ->
+                // 输入已经是目标类型
+                inputType.isInstance(input) ->
                     action(input as I)
 
-                // 输入是列表，且 I 是列表
-                input is List<*> && List::class.java.isAssignableFrom(getGenericTypeClass()) ->
+                // 输入是集合 且 目标类型是集合
+                input is Collection<*> && Collection::class.java.isAssignableFrom(inputType) -> {
+                    validateElements(input)
                     action(input as I)
+                }
 
-                // 输入是单值，但 I 是列表
-                input != null && List::class.java.isAssignableFrom(getGenericTypeClass()) ->
+                // 输入是单值 且 目标类型是集合
+                input != null && Collection::class.java.isAssignableFrom(inputType) -> {
+                    validateElement(input)
                     action(listOf(input) as I)
+                }
 
-                // 其他无法匹配的情况
                 else -> throw IllegalArgumentException(
-                    "SmartGenericTaskAction: Cannot cast ${input?.javaClass} to expected type ${getGenericTypeClass()}"
+                    "SmartGenericTaskAction: Cannot cast ${input?.javaClass} to expected type $inputType"
                 )
             }
         } catch (e: Exception) {
@@ -54,16 +60,35 @@ class SmartGenericTaskAction<I, O>(
         }
     }
 
-    private fun getGenericTypeClass(): Class<*> {
-        val type = (action.javaClass.genericInterfaces.firstOrNull()
-            ?: action.javaClass.genericSuperclass)
-        return when (type) {
-            is java.lang.reflect.ParameterizedType -> type.actualTypeArguments[0] as? Class<*>
-                ?: Any::class.java
-            else -> Any::class.java
+    /**
+     * 如果指定了元素类型，则验证集合元素类型
+     */
+    private fun validateElements(collection: Collection<*>) {
+        elementType?.let { et ->
+            collection.forEach { element ->
+                if (element != null && !et.isInstance(element)) {
+                    throw IllegalArgumentException(
+                        "Collection element ${element::class.java} is not of expected type $et"
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * 验证单个元素
+     */
+    private fun validateElement(element: Any) {
+        elementType?.let { et ->
+            if (!et.isInstance(element)) {
+                throw IllegalArgumentException(
+                    "Element ${element::class.java} is not of expected type $et"
+                )
+            }
         }
     }
 }
+
 
 enum class TaskStatus {
     NOT_STARTED,

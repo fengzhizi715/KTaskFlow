@@ -14,7 +14,7 @@ import kotlinx.coroutines.runBlocking
 suspend fun testSerialTasks() {
     val dag = DAG().apply {
         val t1 = task("1", "Load Config", 1, TaskType.IO,
-            SmartGenericTaskAction<Unit, String> {
+            SmartGenericTaskAction(Unit::class.java) {
                 println("Task 1 running")
                 delay(500)
                 "config"
@@ -22,7 +22,7 @@ suspend fun testSerialTasks() {
         )
 
         val t2 = task("2", "Init Service", 1, TaskType.CPU,
-            SmartGenericTaskAction<String, String> {
+            SmartGenericTaskAction(String::class.java) {
                 println("Task 2 received input: $it")
                 delay(500)
                 "service ready"

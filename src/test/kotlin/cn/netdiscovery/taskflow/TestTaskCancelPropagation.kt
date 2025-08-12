@@ -17,14 +17,14 @@ import kotlinx.coroutines.runBlocking
 suspend fun testTaskCancelPropagation() {
     val dag = DAG().apply {
         val t1 = task("1", "Task 1", 1, TaskType.IO,
-            SmartGenericTaskAction<Unit, String> {
+            SmartGenericTaskAction(Unit::class.java) {
                 println("Task 1 running...")
                 delay(1000)
                 "done"
             }
         )
         val t2 = task("2", "Task 2", 1, TaskType.CPU,
-            SmartGenericTaskAction<String, String> {
+            SmartGenericTaskAction(String::class.java) {
                 println("Task 2 received: $it")
                 delay(1000)
                 "done"

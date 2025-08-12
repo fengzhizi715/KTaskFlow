@@ -13,21 +13,21 @@ import kotlinx.coroutines.*
 suspend fun testWeakDependencyTimeout() {
     val dag = DAG().apply {
         val t1 = task("1", "Strong Dependency", 1, TaskType.IO,
-            SmartGenericTaskAction<Unit, String> {
+            SmartGenericTaskAction(Unit::class.java) {
                 println("Strong dep running")
                 delay(300)
                 "strong done"
             }
         )
         val t2 = task("2", "Weak Dependency", 1, TaskType.IO,
-            SmartGenericTaskAction<Unit, String> {
+            SmartGenericTaskAction(Unit::class.java) {
                 println("Weak dep running (will delay long)")
                 delay(3000) // 故意长延迟，触发弱依赖超时
                 "weak done"
             }
         )
         val t3 = task("3", "Dependent Task", 1, TaskType.CPU,
-            SmartGenericTaskAction<String, String> {
+            SmartGenericTaskAction(String::class.java) {
                 println("Dependent task running after strong dep")
                 delay(300)
                 it

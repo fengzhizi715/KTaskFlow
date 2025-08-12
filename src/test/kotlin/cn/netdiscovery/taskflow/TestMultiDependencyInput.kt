@@ -14,21 +14,21 @@ import kotlinx.coroutines.runBlocking
 suspend fun testMultiDependencyInput() {
     val dag = DAG().apply {
         val t1 = task("1", "Task 1", 1, TaskType.IO,
-            SmartGenericTaskAction<Unit, String> {
+            SmartGenericTaskAction(Unit::class.java) {
                 println("Task 1 running")
                 delay(300)
                 "output1"
             }
         )
         val t2 = task("2", "Task 2", 1, TaskType.IO,
-            SmartGenericTaskAction<Unit, String> {
+            SmartGenericTaskAction(Unit::class.java) {
                 println("Task 2 running")
                 delay(300)
                 "output2"
             }
         )
         val t3 = task("3", "Task 3", 1, TaskType.CPU,
-            SmartGenericTaskAction<List<String>, String> {
+            SmartGenericTaskAction(List::class.java, String::class.java) {
                 println("Task 3 received inputs: $it")
                 delay(300)
                 it.joinToString(", ")

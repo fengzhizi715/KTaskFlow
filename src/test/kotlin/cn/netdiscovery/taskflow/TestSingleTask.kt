@@ -15,7 +15,7 @@ suspend fun testSingleTask() {
 
     val dag = DAG().apply {
         val task = task("1", "Single Task", 1, TaskType.IO,
-            SmartGenericTaskAction<Unit, String> {
+            SmartGenericTaskAction(Unit::class.java) {
                 println("Single task running")
                 delay(300)
                 "done"

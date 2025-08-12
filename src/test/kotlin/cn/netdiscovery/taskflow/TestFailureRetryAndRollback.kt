@@ -14,7 +14,7 @@ import kotlinx.coroutines.runBlocking
 suspend fun testFailureRetryAndRollback() {
     val dag = DAG().apply {
         val t1 = task("1", "Flaky Task", 1, TaskType.IO,
-            SmartGenericTaskAction<Unit, String> {
+            SmartGenericTaskAction(Unit::class.java) {
                 println("Attempting flaky task")
                 delay(300)
                 if (Math.random() < 0.7) throw RuntimeException("Random failure")

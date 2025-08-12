@@ -15,7 +15,7 @@ suspend fun testParallelTasks() {
     val dag = DAG().apply {
         repeat(3) { i ->
             task("$i", "Parallel Task $i", 1, TaskType.IO,
-                SmartGenericTaskAction<Unit, String> {
+                SmartGenericTaskAction(Unit::class.java) {
                     println("Parallel task $i running")
                     delay(300)
                     "result $i"

@@ -13,43 +13,43 @@ import kotlinx.coroutines.runBlocking
  */
 suspend fun testComplexDAGExample() {
     val dag = DAG().apply {
-        val taskA = task("A", "Load Config", 1, TaskType.IO, SmartGenericTaskAction<Unit, String> {
+        val taskA = task("A", "Load Config", 1, TaskType.IO, SmartGenericTaskAction(Unit::class.java) {
             println("Task A running")
             delay(300)
             "config done"
         })
 
-        val taskB = task("B", "Initialize DB", 1, TaskType.CPU, SmartGenericTaskAction<String, String> {
+        val taskB = task("B", "Initialize DB", 1, TaskType.CPU, SmartGenericTaskAction(String::class.java) {
             println("Task B received input: $it")
             delay(500)
             "db ready"
         })
 
-        val taskC = task("C", "Start Services", 1, TaskType.IO, SmartGenericTaskAction<String, String> {
+        val taskC = task("C", "Start Services", 1, TaskType.IO, SmartGenericTaskAction(String::class.java) {
             println("Task C received input: $it")
             delay(400)
             "services started"
         })
 
-        val taskD = task("D", "Prepare Cache", 1, TaskType.CPU, SmartGenericTaskAction<Unit, String> {
+        val taskD = task("D", "Prepare Cache", 1, TaskType.CPU, SmartGenericTaskAction(Unit::class.java) {
             println("Task D running")
             delay(350)
             "cache ready"
         })
 
-        val taskE = task("E", "Load Metrics", 1, TaskType.IO, SmartGenericTaskAction<Unit, String> {
+        val taskE = task("E", "Load Metrics", 1, TaskType.IO, SmartGenericTaskAction(Unit::class.java) {
             println("Task E running (slow)")
             delay(1500)  // 慢任务，测试弱依赖超时
             "metrics loaded"
         })
 
-        val taskF = task("F", "Finalize Startup", 1, TaskType.CPU, SmartGenericTaskAction<List<String>, String> {
+        val taskF = task("F", "Finalize Startup", 1, TaskType.CPU, SmartGenericTaskAction(List::class.java, String::class.java) {
             println("Task F received inputs: $it")
             delay(300)
             "startup finalized"
         })
 
-        val taskG = task("G", "Post Start Cleanup", 1, TaskType.IO, SmartGenericTaskAction<String, String> {
+        val taskG = task("G", "Post Start Cleanup", 1, TaskType.IO, SmartGenericTaskAction(String::class.java) {
             println("Task G running after weak dep")
             delay(200)
             "cleanup done"
