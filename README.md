@@ -480,11 +480,32 @@ fun main() = runBlocking {
 
 ### 失败重试、回滚
 
-```mermaid
-
-```
-
 ```kotlin
+suspend fun testFailureRetryAndRollback() {
+    val dag = DAG().apply {
+        val t1 = task("1", "Flaky Task", 1, TaskType.IO,
+            SmartGenericTaskAction<Unit, String> {
+                println("Attempting flaky task")
+                delay(300)
+                if (Math.random() < 0.7) throw RuntimeException("Random failure")
+                "success"
+            }
+        )
+        t1.retries = 3
+        t1.retryDelay = 500
+        t1.failureCallback = { println("Failure callback triggered") }
+        t1.rollbackAction = { println("Rollback triggered") }
+    }
 
+    val scheduler = TaskScheduler(dag)
+    scheduler.startAsync()
+
+    val result = dag.getTaskResultAsync("1")
+    println(result.value)
+}
+
+fun main() = runBlocking {
+    testFailureRetryAndRollback()
+}
 ```
 
