@@ -378,6 +378,61 @@ fun main() = runBlocking {
 
 ### 弱依赖超时
 
+```mermaid
+flowchart LR
+    1["Strong Dependency"]:::IO
+    2["Weak Dependency"]:::IO
+    3["Dependent Task"]:::CPU
+    1 --> 3
+    2 -.-> 3
+
+    classDef IO fill:#ADD8E6,stroke:#333,stroke-width:1px;
+    classDef CPU fill:#90EE90,stroke:#333,stroke-width:1px;
+```
+
+```kotlin
+suspend fun testWeakDependencyTimeout() {
+    val dag = DAG().apply {
+        val t1 = task("1", "Strong Dependency", 1, TaskType.IO,
+            SmartGenericTaskAction<Unit, String> {
+                println("Strong dep running")
+                delay(300)
+                "strong done"
+            }
+        )
+        val t2 = task("2", "Weak Dependency", 1, TaskType.IO,
+            SmartGenericTaskAction<Unit, String> {
+                println("Weak dep running (will delay long)")
+                delay(3000) // 故意长延迟，触发弱依赖超时
+                "weak done"
+            }
+        )
+        val t3 = task("3", "Dependent Task", 1, TaskType.CPU,
+            SmartGenericTaskAction<String, String> {
+                println("Dependent task running after strong dep")
+                delay(300)
+                it
+            }
+        )
+
+        t3.dependsOn(t1)         // 强依赖
+        t3.weakDependsOn(t2)     // 弱依赖
+        t3.weakDependencyTimeout = 1000    // 弱依赖最多等 1 秒
+        t3.executionTimeout = 2000         // 任务执行最多 2 秒
+    }
+
+    val scheduler = TaskScheduler(dag)
+    scheduler.startAsync()
+
+    val result = dag.getTaskResultAsync("3")
+    println("Task3 result = ${result.value}")
+}
+
+fun main() = runBlocking {
+    testWeakDependencyTimeout()
+}
+```
+
 ### 取消任务
 
 ### 失败重试、回滚
