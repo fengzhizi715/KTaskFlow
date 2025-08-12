@@ -217,12 +217,105 @@ fun main() = runBlocking {
 }
 ```
 
+### 复杂的任务
+
+```mermaid
+digraph G {
+  rankdir=LR; // 从左到右的布局
+  node [shape=box, style=filled];
+  node [fillcolor=lightblue] [label="IO"];
+  node [fillcolor=lightgreen] [label="CPU"];
+  A [label="Load Config", fillcolor=lightblue];
+  B [label="Initialize DB", fillcolor=lightgreen];
+  C [label="Start Services", fillcolor=lightblue];
+  D [label="Prepare Cache", fillcolor=lightgreen];
+  E [label="Load Metrics", fillcolor=lightblue];
+  F [label="Finalize Startup", fillcolor=lightgreen];
+  G [label="Post Start Cleanup", fillcolor=lightblue];
+  A -> B [label="strong"];
+  B -> C [label="strong"];
+  B -> F [label="strong"];
+  D -> F [label="strong"];
+  F -> G [label="strong"];
+  E -> G [style=dashed, label="weak"];
+}
+```
+
+```kotlin
+suspend fun testComplexDAGExample() {
+    val dag = DAG().apply {
+        val taskA = task("A", "Load Config", 1, TaskType.IO, SmartGenericTaskAction<Unit, String> {
+            println("Task A running")
+            delay(300)
+            "config done"
+        })
+
+        val taskB = task("B", "Initialize DB", 1, TaskType.CPU, SmartGenericTaskAction<String, String> {
+            println("Task B received input: $it")
+            delay(500)
+            "db ready"
+        })
+
+        val taskC = task("C", "Start Services", 1, TaskType.IO, SmartGenericTaskAction<String, String> {
+            println("Task C received input: $it")
+            delay(400)
+            "services started"
+        })
+
+        val taskD = task("D", "Prepare Cache", 1, TaskType.CPU, SmartGenericTaskAction<Unit, String> {
+            println("Task D running")
+            delay(350)
+            "cache ready"
+        })
+
+        val taskE = task("E", "Load Metrics", 1, TaskType.IO, SmartGenericTaskAction<Unit, String> {
+            println("Task E running (slow)")
+            delay(1500)  // 慢任务，测试弱依赖超时
+            "metrics loaded"
+        })
+
+        val taskF = task("F", "Finalize Startup", 1, TaskType.CPU, SmartGenericTaskAction<List<String>, String> {
+            println("Task F received inputs: $it")
+            delay(300)
+            "startup finalized"
+        })
+
+        val taskG = task("G", "Post Start Cleanup", 1, TaskType.IO, SmartGenericTaskAction<String, String> {
+            println("Task G running after weak dep")
+            delay(200)
+            "cleanup done"
+        })
+
+        // 依赖关系
+        taskB.dependsOn(taskA)  // A -> B
+        taskC.dependsOn(taskB)  // B -> C
+        taskF.dependsOn(taskB, taskD)  // F 依赖 B 和 D
+        taskG.dependsOn(taskF)  // G 依赖 F
+
+        // 并行无依赖 D, E
+        // 弱依赖 E
+        taskG.weakDependsOn(taskE)
+        taskG.weakDependencyTimeout = 1000L  // 超过1秒弱依赖超时继续执行
+    }
+
+    val scheduler = TaskScheduler(dag)
+    scheduler.startAsync()
+
+
+    delay(5000) // 确保弱依赖超时触发
+    scheduler.shutdown()
+}
+
+fun main() = runBlocking {
+    testComplexDAGExample()
+}
+```
+
+### 动态添加任务
+
+### 弱依赖超时
+
 ### 取消任务
 
 ### 失败重试、回滚
 
-### 动态添加任务
-
-### 复杂的任务
-
-### 弱依赖超时
