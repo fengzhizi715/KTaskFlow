@@ -82,17 +82,25 @@ fun main() = runBlocking {
 ### 串行任务
 
 ```kotlin
-suspend fun testParallelTasks() {
+suspend fun testSerialTasks() {
     val dag = DAG().apply {
-        repeat(3) { i ->
-            task("$i", "Parallel Task $i", 1, TaskType.IO,
-                SmartGenericTaskAction<Unit, String> {
-                    println("Parallel task $i running")
-                    delay(300)
-                    "result $i"
-                }
-            )
-        }
+        val t1 = task("1", "Load Config", 1, TaskType.IO,
+            SmartGenericTaskAction<Unit, String> {
+                println("Task 1 running")
+                delay(500)
+                "config"
+            }
+        )
+
+        val t2 = task("2", "Init Service", 1, TaskType.CPU,
+            SmartGenericTaskAction<String, String> {
+                println("Task 2 received input: $it")
+                delay(500)
+                "service ready"
+            }
+        )
+
+        t2.dependsOn(t1)
     }
 
     val scheduler = TaskScheduler(dag)
@@ -103,13 +111,15 @@ suspend fun testParallelTasks() {
 }
 
 fun main() = runBlocking {
-    testParallelTasks()
+    testSerialTasks()
 }
 ```
 
-```mermaid
+```mermai
 flowchart LR
-    1["Single Task"]:::IO
+    1["Load Config"]:::IO
+    2["Init Service"]:::CPU
+    1 --> 2
 
     classDef IO fill:#ADD8E6,stroke:#333,stroke-width:1px;
     classDef CPU fill:#90EE90,stroke:#333,stroke-width:1px;
