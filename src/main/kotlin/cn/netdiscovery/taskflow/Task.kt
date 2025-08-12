@@ -134,7 +134,7 @@ class Task(
     var rollbackDone: Boolean = false
 
     // 对外可 await 的执行结果
-    val completion = CompletableDeferred<TaskResult>()
+    var completion = CompletableDeferred<TaskResult>()
 
     fun markCompleted(result: TaskResult) {
         status = if (result.success) TaskStatus.COMPLETED else TaskStatus.FAILED
@@ -151,6 +151,13 @@ class Task(
         if (!completion.isCompleted) {
             completion.complete(res)
         }
+    }
+
+    // 添加重置状态方法
+    fun resetForRetry() {
+        status = TaskStatus.NOT_STARTED
+        output = null
+        completion = CompletableDeferred() // 重置完成状态
     }
 
     fun cancel() {

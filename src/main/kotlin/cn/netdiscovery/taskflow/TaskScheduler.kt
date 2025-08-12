@@ -17,14 +17,16 @@ import java.util.concurrent.atomic.AtomicInteger
  * @date: 2024/12/10 15:30
  * @version: V1.0 <描述当前版本功能>
  */
-class TaskScheduler(private val dag: DAG) {
+class TaskScheduler(private val dag: DAG,
+                    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+) {
     private val readyChannel = Channel<Task>(Channel.UNLIMITED)
     private val mutex = Mutex()
 
     private val cpuTaskPool = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val ioTaskPool = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private val taskExecutor = TaskExecutor(mutex)
+    private val taskExecutor = TaskExecutor(mutex, scope)
 
     private val activeTasks = AtomicInteger(0)
     private val allTasksCompleted = CompletableDeferred<Unit>()
@@ -239,6 +241,13 @@ class TaskScheduler(private val dag: DAG) {
     }
 
     private fun launchTask(task: Task) {
+
+        // 在任务执行前添加状态检查
+        if (task.status == TaskStatus.FAILED || task.status == TaskStatus.CANCELLED) {
+            println("[Scheduler] Task ${task.id} in ${task.status} state, skipping execution.")
+            return
+        }
+
         if (task.isCancelled) {
             println("[Scheduler] Task ${task.id} is cancelled before execution, skipping.")
             // 确保等待者不会挂起
