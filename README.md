@@ -165,6 +165,58 @@ flowchart LR
 
 ### 依赖多个任务的输出
 
+```kotlin
+suspend fun testMultiDependencyInput() {
+    val dag = DAG().apply {
+        val t1 = task("1", "Task 1", 1, TaskType.IO,
+            SmartGenericTaskAction<Unit, String> {
+                println("Task 1 running")
+                delay(300)
+                "output1"
+            }
+        )
+        val t2 = task("2", "Task 2", 1, TaskType.IO,
+            SmartGenericTaskAction<Unit, String> {
+                println("Task 2 running")
+                delay(300)
+                "output2"
+            }
+        )
+        val t3 = task("3", "Task 3", 1, TaskType.CPU,
+            SmartGenericTaskAction<List<String>, String> {
+                println("Task 3 received inputs: $it")
+                delay(300)
+                it.joinToString(", ")
+            }
+        )
+
+        t3.dependsOn(t1, t2)
+    }
+
+    val scheduler = TaskScheduler(dag)
+    scheduler.startAsync()
+
+    val result = dag.getTaskResultAsync("3")
+    println(result.value)
+}
+
+fun main() = runBlocking {
+    testMultiDependencyInput()
+}
+```
+
+```mermaid
+flowchart LR
+    1["Task 1"]:::IO
+    2["Task 2"]:::IO
+    3["Task 3"]:::CPU
+    1 --> 3
+    2 --> 3
+
+    classDef IO fill:#ADD8E6,stroke:#333,stroke-width:1px;
+    classDef CPU fill:#90EE90,stroke:#333,stroke-width:1px;
+```
+
 ### 取消任务
 
 ### 失败重试、回滚
