@@ -51,3 +51,46 @@ fun main() = runBlocking {
 
 
 ## 常用示例
+
+### 单任务
+
+```kotlin
+suspend fun testSingleTask() {
+
+    val dag = DAG().apply {
+        val task = task("1", "Single Task", 1, TaskType.IO,
+            SmartGenericTaskAction<Unit, String> {
+                println("Single task running")
+                delay(300)
+                "done"
+            }
+        )
+    }
+
+    val scheduler = TaskScheduler(dag)
+    scheduler.startAsync()
+
+    val result = dag.getTaskResultAsync("1")
+    println(result.value)
+}
+
+fun main() = runBlocking {
+    testSingleTask()
+}
+```
+
+### 串行任务
+
+### 并行任务
+
+### 依赖多个任务的输出
+
+### 取消任务
+
+### 失败重试、回滚
+
+### 动态添加任务
+
+### 复杂的任务
+
+### 弱依赖超时
