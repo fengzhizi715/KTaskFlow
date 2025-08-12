@@ -120,7 +120,6 @@ class Task(
     @Volatile
     var isCancelled: Boolean = false
 
-    var weakDependencyThreshold: Float = 1.0f
     var weakDependencyTimeout: Long = 0L   // 控制弱依赖的等待时长
 
     // 强依赖超时（毫秒，0 表示无限等）
@@ -129,9 +128,6 @@ class Task(
 
     @Volatile
     var weakDependencyWaitStarted: Boolean = false
-
-    @Volatile
-    var rollbackDone: Boolean = false
 
     // 对外可 await 的执行结果
     var completion = CompletableDeferred<TaskResult>()
