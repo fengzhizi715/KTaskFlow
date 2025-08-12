@@ -49,3 +49,35 @@ fun generateDotFile(dag: DAG): String {
     sb.append("}\n")
     return sb.toString()
 }
+
+/**
+ * 生成 Mermaid flowchart
+ */
+fun generateMermaidFlowchart(dag: DAG): String {
+    val sb = StringBuilder()
+    sb.append("flowchart LR\n")
+
+    // 节点定义：不同类型任务不同颜色
+    for (task in dag.getTasks().values) {
+        val color = if (task.type == TaskType.IO) "#ADD8E6" else "#90EE90" // lightblue / lightgreen
+        sb.append("    ${task.id}[\"${task.taskName}\"]:::${task.type.name}\n")
+    }
+
+    // 依赖关系
+    for (task in dag.getTasks().values) {
+        // 强依赖（实线）
+        for (dep in task.dependencies.values) {
+            sb.append("    ${dep.id} --> ${task.id}\n")
+        }
+        // 弱依赖（虚线）
+        for (dep in task.weakDependencies.values) {
+            sb.append("    ${dep.id} -.-> ${task.id}\n")
+        }
+    }
+
+    // 样式定义
+    sb.append("\n    classDef IO fill:#ADD8E6,stroke:#333,stroke-width:1px;\n")
+    sb.append("    classDef CPU fill:#90EE90,stroke:#333,stroke-width:1px;\n")
+
+    return sb.toString()
+}
