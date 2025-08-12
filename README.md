@@ -435,5 +435,56 @@ fun main() = runBlocking {
 
 ### 取消任务
 
+```mermaid
+flowchart LR
+    1["Task 1"]:::IO
+    2["Task 2"]:::CPU
+    1 --> 2
+
+    classDef IO fill:#ADD8E6,stroke:#333,stroke-width:1px;
+    classDef CPU fill:#90EE90,stroke:#333,stroke-width:1px;
+```
+
+```kotlin
+suspend fun testTaskCancelPropagation() {
+    val dag = DAG().apply {
+        val t1 = task("1", "Task 1", 1, TaskType.IO,
+            SmartGenericTaskAction<Unit, String> {
+                println("Task 1 running...")
+                delay(1000)
+                "done"
+            }
+        )
+        val t2 = task("2", "Task 2", 1, TaskType.CPU,
+            SmartGenericTaskAction<String, String> {
+                println("Task 2 received: $it")
+                delay(1000)
+                "done"
+            }
+        )
+        t2.dependsOn(t1)
+    }
+
+    val scheduler = TaskScheduler(dag)
+    scheduler.startAsync()
+
+    // 取消任务1，应该导致任务2无法运行
+    delay(300)
+    scheduler.cancelTask("1")
+}
+
+fun main() = runBlocking {
+    testTaskCancelPropagation()
+}
+```
+
 ### 失败重试、回滚
+
+```mermaid
+
+```
+
+```kotlin
+
+```
 
