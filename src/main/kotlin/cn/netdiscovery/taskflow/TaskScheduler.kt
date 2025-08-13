@@ -46,6 +46,7 @@ class TaskScheduler(
                         try {
                             readyChannel.send(task)
                         } catch (e: ClosedSendChannelException) {
+                            enqueuedTasks.remove(task.id)
                             println("[Scheduler] readyChannel closed, cannot enqueue ${task.id} (from enqueueCallback)")
                         }
                     } else {
@@ -224,6 +225,7 @@ class TaskScheduler(
                             println("[Scheduler] enqueue task ${task.id} -> readyChannel")
                             readyChannel.send(task)
                         } catch (e: ClosedSendChannelException) {
+                            enqueuedTasks.remove(task.id)
                             println("[Scheduler] readyChannel closed, cannot enqueue ${task.id}")
                         }
                     } else {
@@ -274,6 +276,7 @@ class TaskScheduler(
                             println("[Scheduler] enqueue after weak wait: ${task.id}")
                             readyChannel.send(task)
                         } catch (e: ClosedSendChannelException) {
+                            enqueuedTasks.remove(task.id)
                             println("[Scheduler] readyChannel closed, cannot enqueue ${task.id} after weak wait")
                         }
                     } else {
