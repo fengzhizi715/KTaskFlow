@@ -66,10 +66,8 @@ class SmartGenericTaskAction<I, O>(
     private fun validateElements(collection: Collection<*>) {
         elementType?.let { et ->
             collection.forEach { element ->
-                if (element != null && !et.isInstance(element)) {
-                    throw IllegalArgumentException(
-                        "Collection element ${element::class.java} is not of expected type $et"
-                    )
+                if (element == null || !et.isInstance(element)) {
+                    throw IllegalArgumentException("Collection element is not of expected type $et")
                 }
             }
         }
