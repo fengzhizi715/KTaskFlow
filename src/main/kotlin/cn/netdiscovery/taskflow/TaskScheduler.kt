@@ -360,14 +360,20 @@ class TaskScheduler(
     }
 
     /**
-     * 收集强依赖输出：如果上游最终失败（FAILED/CANCELLED/TIMED_OUT）且不会再成功，则尽快返回。
+     * 收集强依赖输出（**改动点：按声明顺序**）。
+     * 若 Task 暴露了 `dependencyOrder`(List<String>) 或 `strongDependencyOrder`(List<String>)，则严格按其顺序；
+     * 否则退化为按依赖 id 的稳定排序（保证确定性，避免 HashMap 随机顺序）。
      */
     private suspend fun collectDependencyOutputsWithLogs(task: Task): Any? {
         val outputs = mutableListOf<Any?>()
         val startTime = System.currentTimeMillis()
         val timeout = if (task.strongDependencyTimeout > 0L) task.strongDependencyTimeout else Long.MAX_VALUE
 
-        for ((_, dep) in task.dependencies) {
+        // -------- 仅此处变更：获取“有序”的强依赖列表 --------
+        val orderedDeps: List<Task> = getStrongDependenciesInOrder(task)
+        // -----------------------------------------------------
+
+        for (dep in orderedDeps) {
             // 只等待强依赖完成，但受 strongDependencyTimeout 限制
             while (dep.status != TaskStatus.COMPLETED && !dep.isCancelled) {
                 // 如果上游已经进入无法恢复的终态，立即跳出等待
@@ -391,6 +397,40 @@ class TaskScheduler(
             outputs.size == 1 -> outputs.first()
             else -> outputs
         }
+    }
+
+    /**
+     * 获取“声明顺序”的强依赖列表：
+     * - 优先从 Task 的 `dependencyOrder` 或 `strongDependencyOrder`（List<String>）反射读取；
+     * - 否则退化为依赖 id 的稳定排序，避免不确定顺序。
+     */
+    private fun getStrongDependenciesInOrder(task: Task): List<Task> {
+        // 1) 反射读取 Task 上可能存在的声明顺序列表
+        val orderIds: List<String>? = run {
+            try {
+                val f1 = task.javaClass.getDeclaredField("dependencyOrder")
+                f1.isAccessible = true
+                (f1.get(task) as? List<*>)?.filterIsInstance<String>()
+            } catch (_: Throwable) {
+                try {
+                    val f2 = task.javaClass.getDeclaredField("strongDependencyOrder")
+                    f2.isAccessible = true
+                    (f2.get(task) as? List<*>)?.filterIsInstance<String>()
+                } catch (_: Throwable) {
+                    null
+                }
+            }
+        }
+
+        if (!orderIds.isNullOrEmpty()) {
+            // 严格按声明顺序映射到 Task
+            return orderIds.mapNotNull { id -> task.dependencies[id] }
+        }
+
+        // 2) 退化路径：按依赖 id 做稳定排序（确保可预测）
+        return task.dependencies.entries
+            .sortedBy { it.key }
+            .map { it.value }
     }
 
     private suspend fun onTaskCompleted(task: Task) {

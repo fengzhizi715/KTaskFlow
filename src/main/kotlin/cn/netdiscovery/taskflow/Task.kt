@@ -3,6 +3,7 @@ package cn.netdiscovery.taskflow
 import kotlinx.coroutines.CompletableDeferred
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CancellationException
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  *
@@ -155,6 +156,8 @@ class Task(
     // 对外可 await 的执行结果
     var completion = CompletableDeferred<TaskResult>()
 
+    val dependencyOrder = CopyOnWriteArrayList<String>()
+
     fun markCompleted(result: TaskResult) {
         status = if (result.success) TaskStatus.COMPLETED else TaskStatus.FAILED
         output = result
@@ -191,6 +194,7 @@ class Task(
         for (task in tasks) {
             dependencies[task.id] = task
             task.dependents[this.id] = this
+            dependencyOrder.add(task.id)
         }
     }
 
