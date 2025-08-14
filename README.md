@@ -1,18 +1,18 @@
 # KTaskFlow
 
-基于 Kotlin 协程实现的通用任务编排框架，支持有向无环图（DAG）依赖调度，适用于复杂业务流程调度。
+基于 Kotlin 协程的轻量级任务编排引擎（DAG）。 面向复杂业务流程调度，支持有向无环图（DAG）依赖、强/弱依赖、超时、重试、回滚与任务级等待（CompletableDeferred）。
 
 ---
 
 ## 主要特性
 
-- 支持**强依赖**和**弱依赖**，弱依赖可配置超时后自动放行
-- 任务类型区分 I/O 密集型和 CPU 密集型，自动调度到不同线程池
-- 支持任务取消及取消传播，防止不必要任务执行
-- 内置任务超时控制和失败重试机制，支持回滚操作
-- 支持异步通知，通过 `CompletableDeferred` 优雅等待任务结果
-- 任务优先级调度，基于优先级队列动态调度
-- 使用 Kotlin 协程 Channel 实现事件驱动任务调度，避免传统轮询带来的 CPU 空转
+* 强依赖（必须等待） & 弱依赖（可配置超时放行）
+* 按任务类型（I/O / CPU）分流到不同线程池执行
+* 任务取消与取消传播，防止不必要执行
+* 任务执行超时、失败重试、可配置回滚与失败回调
+* `CompletableDeferred` 风格的任务结果等待，便于组合调用
+* 任务优先级支持，基于优先级执行调度
+* 使用 Kotlin 协程与 Channel 实现事件驱动调度，降低 CPU 空转
 
 ---
 
@@ -42,12 +42,36 @@ fun main() = runBlocking {
 }
 ```
 
-## 使用说明
-* 创建 DAG 并定义任务，支持自定义 TaskAction，使用泛型封装输入输出类型
-* 设置任务之间的依赖关系，支持强依赖 .dependsOn() 和弱依赖 .weakDependsOn()
-* 使用 TaskScheduler 启动调度，异步执行任务
-* 通过 DAG.getTaskResultAsync(taskId) 等待任务完成并获取结果
-* 可调用 TaskScheduler.cancelTask(taskId) 取消任务及其后续依赖任务
+## 核心概念（简明）
+
+* Task：基本执行单元，包含 id、名称、类型（IO/CPU）、优先级、重试策略、超时等。
+* TaskAction / SmartGenericTaskAction：任务执行逻辑封装。SmartGenericTaskAction 提供了对常见输入（Unit、单值、集合）作智能适配的能力（建议在构造时传入 Class 类型以避免泛型擦除带来的不确定性）。
+* 强依赖（dependsOn）：必须在下游任务开始执行前完成。
+* 弱依赖（weakDependsOn）：下游会等待弱依赖，但可设置超时，超时后仍继续执行（适用于“最好有但非必需”的数据或事件）。
+* TaskScheduler：调度器，负责计算 indegree、入队、执行、重试、回滚与完成通知。
+
+## 注意事项 & 最佳实践
+
+这些是使用 KTaskFlow 时常见且容易导致误解的点，建议在实际工程中参考：
+
+1. 多依赖的输入顺序
+* 如果一个任务依赖多个上游任务并且期望按某个顺序接收它们的输出（例如 List 顺序），请通过 dependsOn(vararg tasks) 按你希望的顺序声明依赖。
+* 不同实现/版本中 Map 的遍历顺序可能不一致 —— 若你对顺序非常敏感，请确认调度器版本对依赖顺序的保证（或在 Task 中维护显式的依赖顺序列表）。
+
+2. SmartGenericTaskAction 与泛型擦除
+* Kotlin 的 lambda 类型会造成运行时类型擦除，反射推断泛型类型并不稳定。建议在构造 SmartGenericTaskAction 时显式传入 Class<I>（例如 SmartGenericTaskAction(String::class.java) { ... }），避免运行时类型判断失败或 ClassCastException。
+
+3. 弱依赖语义
+* 弱依赖是“可以等待但不是必须”的依赖，通常用于非关键数据（例如监控/指标、异步补偿数据）。配置 weakDependencyTimeout 合理值以避免长时间阻塞启动路径。
+
+4. 重试与 CompletableDeferred
+* 框架支持失败重试（retries、retryDelay）并在任务最终成功或失败时完成 completion。注意：某些实现会在重试时重置 completion，这会影响外部通过旧 Deferred 等待最终结果的行为——请根据你项目需要选择语义（保留原 Deferred 或在重试时换新 Deferred）。
+
+5. 取消传播策略
+* 默认实现会将取消传播到下游（包括强依赖链）。如果你不希望弱依赖因上游取消被强制取消，请在取消策略中谨慎区分强/弱依赖。
+
+6. 资源与线程池
+* I/O 与 CPU 任务分离到不同协程池（Dispatchers.IO / Dispatchers.Default），有利于性能隔离。根据运行环境调整池大小与任务类型分配。
 
 
 ## 常用示例
