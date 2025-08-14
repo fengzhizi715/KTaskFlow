@@ -50,30 +50,6 @@ fun main() = runBlocking {
 * 弱依赖（weakDependsOn）：下游会等待弱依赖，但可设置超时，超时后仍继续执行（适用于“最好有但非必需”的数据或事件）。
 * TaskScheduler：调度器，负责计算 indegree、入队、执行、重试、回滚与完成通知。
 
-## 注意事项 & 最佳实践
-
-这些是使用 KTaskFlow 时常见且容易导致误解的点，建议在实际工程中参考：
-
-1. 多依赖的输入顺序
-* 如果一个任务依赖多个上游任务并且期望按某个顺序接收它们的输出（例如 List 顺序），请通过 dependsOn(vararg tasks) 按你希望的顺序声明依赖。
-* 不同实现/版本中 Map 的遍历顺序可能不一致 —— 若你对顺序非常敏感，请确认调度器版本对依赖顺序的保证（或在 Task 中维护显式的依赖顺序列表）。
-
-2. SmartGenericTaskAction 与泛型擦除
-* Kotlin 的 lambda 类型会造成运行时类型擦除，反射推断泛型类型并不稳定。建议在构造 SmartGenericTaskAction 时显式传入 Class<I>（例如 SmartGenericTaskAction(String::class.java) { ... }），避免运行时类型判断失败或 ClassCastException。
-
-3. 弱依赖语义
-* 弱依赖是“可以等待但不是必须”的依赖，通常用于非关键数据（例如监控/指标、异步补偿数据）。配置 weakDependencyTimeout 合理值以避免长时间阻塞启动路径。
-
-4. 重试与 CompletableDeferred
-* 框架支持失败重试（retries、retryDelay）并在任务最终成功或失败时完成 completion。注意：某些实现会在重试时重置 completion，这会影响外部通过旧 Deferred 等待最终结果的行为——请根据你项目需要选择语义（保留原 Deferred 或在重试时换新 Deferred）。
-
-5. 取消传播策略
-* 默认实现会将取消传播到下游（包括强依赖链）。如果你不希望弱依赖因上游取消被强制取消，请在取消策略中谨慎区分强/弱依赖。
-
-6. 资源与线程池
-* I/O 与 CPU 任务分离到不同协程池（Dispatchers.IO / Dispatchers.Default），有利于性能隔离。根据运行环境调整池大小与任务类型分配。
-
-
 ## 常用示例
 
 ### 单任务
