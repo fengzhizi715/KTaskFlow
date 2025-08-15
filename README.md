@@ -44,11 +44,11 @@ fun main() = runBlocking {
 
 ## 核心概念（简明）
 
-* Task：基本执行单元，包含 id、名称、类型（IO/CPU）、优先级、重试策略、超时等。
-* TaskAction / SmartGenericTaskAction：任务执行逻辑封装。SmartGenericTaskAction 提供了对常见输入（Unit、单值、集合）作智能适配的能力（建议在构造时传入 Class 类型以避免泛型擦除带来的不确定性）。
-* 强依赖（dependsOn）：必须在下游任务开始执行前完成。
-* 弱依赖（weakDependsOn）：下游会等待弱依赖，但可设置超时，超时后仍继续执行（适用于“最好有但非必需”的数据或事件）。
-* TaskScheduler：调度器，负责计算 indegree、入队、执行、重试、回滚与完成通知。
+* **Task**：基本执行单元，包含 id、名称、类型（IO/CPU）、优先级、重试策略、超时等。
+* **TaskAction / SmartGenericTaskAction**：任务执行逻辑封装。SmartGenericTaskAction 提供了对常见输入（Unit、单值、集合）作智能适配的能力（建议在构造时传入 Class 类型以避免泛型擦除带来的不确定性）。
+* **强依赖（dependsOn）**：必须在下游任务开始执行前完成。
+* **弱依赖（weakDependsOn）**：下游会等待弱依赖，但可设置超时，超时后仍继续执行（适用于“最好有但非必需”的数据或事件）。
+* **TaskScheduler**：调度器，负责计算 indegree、入队、执行、重试、回滚与完成通知。
 
 ## 常用示例
 
