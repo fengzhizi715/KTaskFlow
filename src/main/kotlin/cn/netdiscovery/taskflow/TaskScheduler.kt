@@ -4,6 +4,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ClosedSendChannelException
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -17,15 +18,37 @@ import java.util.concurrent.atomic.AtomicInteger
  * @date: 2024/12/10 15:30
  * @version: V1.0 <描述当前版本功能>
  */
+enum class CachePolicy {
+    NONE,           // 不使用缓存
+    READ_ONLY,      // 仅读缓存，不写入
+    WRITE_ONLY,     // 仅写缓存（执行后写入，下次才能读到）
+    READ_WRITE      // 读写缓存
+}
+fun CachePolicy.canRead()  = this == CachePolicy.READ_ONLY || this == CachePolicy.READ_WRITE
+fun CachePolicy.canWrite() = this == CachePolicy.WRITE_ONLY || this == CachePolicy.READ_WRITE
+// ------------------------------------------------------------------------
+
+
 class TaskScheduler(
     private val dag: DAG,
-    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    // ------------------- 新增：并发度限制（按任务类型） -------------------
+    private val ioMaxConcurrency: Int = Int.MAX_VALUE,
+    private val cpuMaxConcurrency: Int = Int.MAX_VALUE
+    // --------------------------------------------------------------------
 ) {
     private val readyChannel = Channel<Task>(Channel.UNLIMITED)
     private val mutex = Mutex()
 
     private val cpuTaskPool = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val ioTaskPool = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val ioTaskPool  = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    // ------------------- 新增：按类型的信号量限流 -------------------------
+    private val ioSemaphore: Semaphore?  =
+        if (ioMaxConcurrency == Int.MAX_VALUE) null else Semaphore(ioMaxConcurrency)
+    private val cpuSemaphore: Semaphore? =
+        if (cpuMaxConcurrency == Int.MAX_VALUE) null else Semaphore(cpuMaxConcurrency)
+    // --------------------------------------------------------------------
 
     // enqueuedTasks 用于防止重复入队（key: task.id）
     private val enqueuedTasks = ConcurrentHashMap.newKeySet<String>()
@@ -241,12 +264,11 @@ class TaskScheduler(
     }
 
     private fun launchWeakDependencyWaitAndMaybeEnqueue(task: Task) {
-        ioTaskPool.launch {// 这里使用 ioTaskPool ，是因为只是做轮询和延时等待，不占 CPU，放 cpuTaskPool 会浪费资源
+        ioTaskPool.launch {
             val startTime = System.currentTimeMillis()
             val timeout = if (task.weakDependencyTimeout > 0L) task.weakDependencyTimeout else 0L
 
             while (true) {
-                // 如果任务在等待过程中被取消，立即停止等待
                 if (task.isCancelled) {
                     println("[Scheduler] weak wait aborted because task ${task.id} was cancelled.")
                     return@launch
@@ -268,7 +290,6 @@ class TaskScheduler(
 
             mutex.withLock {
                 task.weakDependenciesCompleted = true
-                // 只有在未取消并且 indegree==0 的情况下才尝试入队
                 if (!task.isCancelled && task.indegree == 0 && !isShuttingDown.get()) {
                     val added = enqueuedTasks.add(task.id)
                     if (added) {
@@ -294,7 +315,6 @@ class TaskScheduler(
         // 在任务执行前添加状态检查
         if (task.status == TaskStatus.FAILED || task.status == TaskStatus.CANCELLED || task.status == TaskStatus.TIMED_OUT) {
             println("[Scheduler] Task ${task.id} in ${task.status} state, skipping execution.")
-            // 清理 enqueued 标记（任务不会再被执行，允许重试/重加时重新入队）
             enqueuedTasks.remove(task.id)
             return
         }
@@ -306,9 +326,7 @@ class TaskScheduler(
                     task.markFailed(CancellationException("Task ${task.id} cancelled before execution"))
                 }
             } catch (_: Exception) {}
-            // 清理 enqueued 标记
             enqueuedTasks.remove(task.id)
-            // 通知下游以让依赖链推进
             scope.launch {
                 try { onTaskCompleted(task) } catch (ex: Exception) { println("[Scheduler] onTaskCompleted error for ${task.id}: ${ex.message}") }
             }
@@ -316,43 +334,58 @@ class TaskScheduler(
         }
 
         val pool = if (task.type == TaskType.CPU) cpuTaskPool else ioTaskPool
+        val semaphore = if (task.type == TaskType.CPU) cpuSemaphore else ioSemaphore
 
         val job = pool.launch {
-            println("[Scheduler] launching execution job for task ${task.id}")
-            // 在真正执行前收集强依赖输出（阻塞等待，只针对强依赖）
-            val input = collectDependencyOutputsWithLogs(task)
+            // ------------------- 新增：并发度限制（获取许可证） -------------------
+            if (semaphore != null) {
+                println("[Scheduler] ${task.type} acquiring permit for task ${task.id}")
+                semaphore.acquire()
+            }
+            // ---------------------------------------------------------------------
             try {
-                taskExecutor.execute(task, input)
-            } catch (ex: CancellationException) {
-                println("[Scheduler] Task ${task.id} was cancelled during execution.")
-            } catch (ex: Exception) {
-                println("[Scheduler] execution exception for ${task.id}: ${ex.message}")
-            } finally {
-                // 在任务执行完成（无论成功/失败/超时/取消）时清理 enqueued 标记，允许该任务在后续被重新入队（例如重试）
-                enqueuedTasks.remove(task.id)
-
-                // 标记完成并通知下游
+                println("[Scheduler] launching execution job for task ${task.id}")
+                // 在真正执行前收集强依赖输出（阻塞等待，只针对强依赖）
+                val input = collectDependencyOutputsWithLogs(task)
                 try {
-                    onTaskCompleted(task)
+                    taskExecutor.execute(task, input)
+                } catch (ex: CancellationException) {
+                    println("[Scheduler] Task ${task.id} was cancelled during execution.")
                 } catch (ex: Exception) {
-                    println("[Scheduler] onTaskCompleted error for ${task.id}: ${ex.message}")
-                }
+                    println("[Scheduler] execution exception for ${task.id}: ${ex.message}")
+                } finally {
+                    // 在任务执行完成（无论成功/失败/超时/取消）时清理 enqueued 标记，允许该任务在后续被重新入队（例如重试）
+                    enqueuedTasks.remove(task.id)
 
-                // active/tasks 完成检测
-                if (activeTasks.decrementAndGet() == 0) {
-                    val channelHas = try { !readyChannel.isEmpty } catch (_: Throwable) { true }
-                    if (!channelHas && runningJobs.isEmpty()) {
-                        if (!allTasksCompleted.isCompleted) {
-                            // 额外检查：确认所有任务处于终态
-                            val allFinal = mutex.withLock { allTasksAreInFinalState() }
-                            if (allFinal && !allTasksCompleted.isCompleted) {
-                                allTasksCompleted.complete(Unit)
+                    // 标记完成并通知下游
+                    try {
+                        onTaskCompleted(task)
+                    } catch (ex: Exception) {
+                        println("[Scheduler] onTaskCompleted error for ${task.id}: ${ex.message}")
+                    }
+
+                    // active/tasks 完成检测
+                    if (activeTasks.decrementAndGet() == 0) {
+                        val channelHas = try { !readyChannel.isEmpty } catch (_: Throwable) { true }
+                        if (!channelHas && runningJobs.isEmpty()) {
+                            if (!allTasksCompleted.isCompleted) {
+                                val allFinal = mutex.withLock { allTasksAreInFinalState() }
+                                if (allFinal && !allTasksCompleted.isCompleted) {
+                                    allTasksCompleted.complete(Unit)
+                                }
                             }
                         }
                     }
+                    runningJobs.remove(task.id)
+                    println("[Scheduler] job finished for ${task.id}")
                 }
-                runningJobs.remove(task.id)
-                println("[Scheduler] job finished for ${task.id}")
+            } finally {
+                // ------------------- 新增：并发度限制（释放许可证） -------------------
+                if (semaphore != null) {
+                    semaphore.release()
+                    println("[Scheduler] ${task.type} released permit for task ${task.id}")
+                }
+                // ---------------------------------------------------------------------
             }
         }
 
@@ -360,23 +393,17 @@ class TaskScheduler(
     }
 
     /**
-     * 收集强依赖输出（**改动点：按声明顺序**）。
-     * 若 Task 暴露了 `dependencyOrder`(List<String>) 或 `strongDependencyOrder`(List<String>)，则严格按其顺序；
-     * 否则退化为按依赖 id 的稳定排序（保证确定性，避免 HashMap 随机顺序）。
+     * 收集强依赖输出（按声明顺序）。
      */
     private suspend fun collectDependencyOutputsWithLogs(task: Task): Any? {
         val outputs = mutableListOf<Any?>()
         val startTime = System.currentTimeMillis()
         val timeout = if (task.strongDependencyTimeout > 0L) task.strongDependencyTimeout else Long.MAX_VALUE
 
-        // -------- 仅此处变更：获取“有序”的强依赖列表 --------
         val orderedDeps: List<Task> = getStrongDependenciesInOrder(task)
-        // -----------------------------------------------------
 
         for (dep in orderedDeps) {
-            // 只等待强依赖完成，但受 strongDependencyTimeout 限制
             while (dep.status != TaskStatus.COMPLETED && !dep.isCancelled) {
-                // 如果上游已经进入无法恢复的终态，立即跳出等待
                 if (dep.status == TaskStatus.FAILED || dep.status == TaskStatus.TIMED_OUT) {
                     println("[Scheduler] dependency ${dep.id} is in terminal state ${dep.status}, won't wait further for ${task.id}")
                     break
@@ -400,12 +427,9 @@ class TaskScheduler(
     }
 
     /**
-     * 获取“声明顺序”的强依赖列表：
-     * - 优先从 Task 的 `dependencyOrder` 或 `strongDependencyOrder`（List<String>）反射读取；
-     * - 否则退化为依赖 id 的稳定排序，避免不确定顺序。
+     * 获取“声明顺序”的强依赖列表
      */
     private fun getStrongDependenciesInOrder(task: Task): List<Task> {
-        // 1) 反射读取 Task 上可能存在的声明顺序列表
         val orderIds: List<String>? = run {
             try {
                 val f1 = task.javaClass.getDeclaredField("dependencyOrder")
@@ -423,11 +447,9 @@ class TaskScheduler(
         }
 
         if (!orderIds.isNullOrEmpty()) {
-            // 严格按声明顺序映射到 Task
             return orderIds.mapNotNull { id -> task.dependencies[id] }
         }
 
-        // 2) 退化路径：按依赖 id 做稳定排序（确保可预测）
         return task.dependencies.entries
             .sortedBy { it.key }
             .map { it.value }
@@ -435,15 +457,11 @@ class TaskScheduler(
 
     private suspend fun onTaskCompleted(task: Task) {
         mutex.withLock {
-            // snapshot 防止并发修改遍历问题
             val dependentsSnapshot = task.dependents.values.toList()
             for (dependent in dependentsSnapshot) {
-                // 跳过已完成或已取消的下游，避免重复入队
                 if (dependent.status == TaskStatus.COMPLETED || dependent.isCancelled) {
                     continue
                 }
-
-                // 只对“强依赖”执行 indegree--（修复：不要对弱依赖进行 indegree 减少）
                 val isStrongDep = dependent.dependencies.containsKey(task.id)
                 val isWeakDep = dependent.weakDependencies.containsKey(task.id)
 
@@ -451,7 +469,6 @@ class TaskScheduler(
                     dependent.indegree = (dependent.indegree - 1).coerceAtLeast(0)
                 }
 
-                // 如果这是一个弱依赖的完成，检查该 dependent 的所有弱依赖是否都完成
                 if (isWeakDep) {
                     val allWeakCompleted = dependent.weakDependencies.values.all { it.status == TaskStatus.COMPLETED }
                     if (allWeakCompleted) {
@@ -459,7 +476,6 @@ class TaskScheduler(
                     }
                 }
 
-                // 尝试入队（enqueueIfReady 会做幂等检查和弱依赖/强依赖判断）
                 enqueueIfReady(dependent)
             }
         }

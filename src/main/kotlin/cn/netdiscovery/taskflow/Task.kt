@@ -13,7 +13,6 @@ import java.util.concurrent.CopyOnWriteArrayList
  * @date: 2024/8/20 15:41
  * @version: V1.0 <描述当前版本功能>
  */
-
 /**
  * 任务动作接口，用于封装不同输入和输出类型的任务逻辑
  */
@@ -31,21 +30,17 @@ class SmartGenericTaskAction<I, O>(
     override suspend fun execute(input: Any?): Any? {
         return try {
             when {
-                // 输入为 null 且类型为 Unit
                 input == null && inputType == Unit::class.java ->
                     action(Unit as I)
 
-                // 输入已经是目标类型
                 inputType.isInstance(input) ->
                     action(input as I)
 
-                // 输入是集合 且 目标类型是集合
                 input is Collection<*> && Collection::class.java.isAssignableFrom(inputType) -> {
                     validateElements(input)
                     action(input as I)
                 }
 
-                // 输入是单值 且 目标类型是集合
                 input != null && Collection::class.java.isAssignableFrom(inputType) -> {
                     validateElement(input)
                     action(listOf(input) as I)
@@ -61,9 +56,6 @@ class SmartGenericTaskAction<I, O>(
         }
     }
 
-    /**
-     * 如果指定了元素类型，则验证集合元素类型
-     */
     private fun validateElements(collection: Collection<*>) {
         elementType?.let { et ->
             collection.forEach { element ->
@@ -74,9 +66,6 @@ class SmartGenericTaskAction<I, O>(
         }
     }
 
-    /**
-     * 验证单个元素
-     */
     private fun validateElement(element: Any) {
         elementType?.let { et ->
             if (!et.isInstance(element)) {
@@ -152,6 +141,18 @@ class Task(
 
     @Volatile
     var weakDependencyWaitStarted: Boolean = false
+
+    var cachePolicy: CachePolicy = CachePolicy.NONE
+    var cacheKey: String? = null
+    var cacheTTL: Long = 0L // 毫秒；<=0 表示不过期
+
+    /** 便捷方法：启用缓存 */
+    fun enableCache(key: String, ttlMillis: Long = 0L, policy: CachePolicy = CachePolicy.READ_WRITE): Task {
+        this.cacheKey = key
+        this.cacheTTL = ttlMillis
+        this.cachePolicy = policy
+        return this
+    }
 
     // 对外可 await 的执行结果
     var completion = CompletableDeferred<TaskResult>()
