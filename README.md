@@ -4,7 +4,7 @@
 
 ---
 
-## ✨主要特性
+## ✨ 主要特性
 
 * DAG 任务编排
 
@@ -26,7 +26,7 @@
 
 ---
 
-## 快速开始
+## 🚀 快速开始
 
 ```kotlin
 fun main() = runBlocking {
@@ -81,7 +81,7 @@ fun main() = runBlocking {
   * WRITE_ONLY：仅写入缓存
   * READ_WRITE：先读缓存，若没有则执行并写入
 
-## 🚀 常用示例
+## ✨ 常用示例
 
 ### 单任务
 
