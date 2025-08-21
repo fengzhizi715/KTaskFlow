@@ -17,9 +17,9 @@
   * 缓存策略（READ_ONLY / WRITE_ONLY / READ_WRITE）
   * 多个任务可共享同一个缓存键
 * 任务调度
- * 支持任务优先级
- * IO/CPU 类型任务区分（可绑定不同的 Dispatcher）
- * 异步执行，支持超时
+  * 支持任务优先级
+  * IO/CPU 类型任务区分（可绑定不同的 Dispatcher）
+  * 异步执行，支持超时
 * 优雅的 Kotlin DSL
 
   简洁流畅地定义任务、依赖、缓存
