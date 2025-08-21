@@ -52,13 +52,34 @@ fun main() = runBlocking {
 }
 ```
 
-## 使用说明
-* 创建 DAG 并定义任务，支持自定义 TaskAction，使用泛型封装输入输出类型
-* 设置任务之间的依赖关系，支持强依赖 .dependsOn() 和弱依赖 .weakDependsOn()
-* 使用 TaskScheduler 启动调度，异步执行任务
-* 通过 DAG.getTaskResultAsync(taskId) 等待任务完成并获取结果
-* 可调用 TaskScheduler.cancelTask(taskId) 取消任务及其后续依赖任务
+## 🧩 核心概念
 
+* Task
+
+  任务的基本单元，包含：
+  * 唯一 ID
+  * 名称、优先级、类型 
+  * 任务逻辑（suspend 函数）
+  * 缓存配置（可选）
+  * 依赖关系（强依赖 / 弱依赖）
+* TaskAction
+
+  抽象的任务执行逻辑封装，当前实现为 SmartGenericTaskAction，支持输入类型自动推断、集合拼装。
+
+* TaskScheduler
+
+  负责任务的调度执行，处理依赖解析、缓存读取、并发调度、异常捕获。
+
+* DAG
+
+  管理任务节点及依赖关系，提供统一的任务流描述。
+
+* CachePolicy
+
+  定义缓存读写策略：
+  * READ_ONLY：仅从缓存读取
+  * WRITE_ONLY：仅写入缓存
+  * READ_WRITE：先读缓存，若没有则执行并写入
 
 ## 🚀 常用示例
 
@@ -523,9 +544,7 @@ fun main() = runBlocking {
 
 # 🔮 后续优化方向
 
-更强大的 DSL：支持 parallel { ... } / branch { ... }
+* 更强大的 DSL：支持 parallel { ... } / branch { ... }
 
-动态任务注入：运行时添加/修改 DAG
-
-更灵活的调度策略：任务重试、熔断、限流
+* 更灵活的调度策略：任务重试、熔断、限流
 
